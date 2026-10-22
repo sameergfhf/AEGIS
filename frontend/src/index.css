@@ -1,0 +1,511 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+:root {
+  --color-navy-950: #020617;
+  --color-navy-900: #0f172a;
+  --color-navy-800: #1e293b;
+  --color-navy-700: #334155;
+  --color-navy-600: #475569;
+  --color-cyan-500: #06b6d4;
+  --color-cyan-400: #22d3ee;
+  --color-blue-500: #3b82f6;
+  --color-blue-400: #60a5fa;
+  --color-green-500: #22c55e;
+  --color-yellow-500: #eab308;
+  --color-orange-500: #f97316;
+  --color-red-500: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--color-navy-950);
+  color: #f1f5f9;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-navy-900);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-navy-600);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-cyan-500);
+}
+
+/* Glass card */
+.glass-card {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(71, 85, 105, 0.4);
+  border-radius: 12px;
+}
+
+/* Glow effects */
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.15);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+}
+
+/* Animated gradient border */
+.gradient-border {
+  position: relative;
+  background: linear-gradient(var(--color-navy-900), var(--color-navy-900)) padding-box,
+              linear-gradient(135deg, #06b6d4, #3b82f6, #8b5cf6) border-box;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+/* Pulse animation for scan status */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(6, 182, 212, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(6, 182, 212, 0.6); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Score ring animation */
+@keyframes ring-fill {
+  from { stroke-dashoffset: 251; }
+  to { stroke-dashoffset: var(--target-offset); }
+}
+
+.ring-animate {
+  animation: ring-fill 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Fade-in animation */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+/* Slide-in for sidebar items */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.slide-in {
+  animation: slide-in 0.25s ease-out forwards;
+}
+
+/* React Flow overrides */
+.react-flow__background {
+  background-color: transparent !important;
+}
+.react-flow__node {
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── AEGIS Flow Diagram Styles ─────────────────────────────────────────── */
+
+.aegis-flow-container {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.aegis-flow-container:hover {
+  border-color: rgba(6, 182, 212, 0.3);
+  box-shadow: 0 8px 24px -8px rgba(6, 182, 212, 0.1);
+}
+
+.aegis-flow-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+.aegis-flow-node-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  background: rgba(51, 65, 85, 0.5);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.aegis-flow-canvas {
+  height: 600px;
+  position: relative;
+}
+
+.aegis-flow-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+}
+
+/* ── Node Styles ───────────────────────────────────────────────────────── */
+
+.aegis-flow-node {
+  min-width: 180px;
+  max-width: 220px;
+  border-radius: 12px;
+  border: 1px solid;
+  padding: 12px;
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  font-family: 'Inter', sans-serif;
+}
+.aegis-flow-node:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.15);
+}
+
+.aegis-flow-security-node {
+  min-width: 190px;
+  max-width: 230px;
+}
+
+.aegis-flow-node-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.aegis-flow-node-icon {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  border-radius: 8px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.aegis-flow-node-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.aegis-flow-node-title {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.aegis-flow-node-desc {
+  font-size: 10px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.aegis-flow-node-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.aegis-flow-node-tag {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Status Badge ──────────────────────────────────────────────────────── */
+
+.aegis-flow-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.aegis-flow-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ── Score Bar ──────────────────────────────────────────────────────────── */
+
+.aegis-flow-score-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.aegis-flow-score-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(51, 65, 85, 0.6);
+  overflow: hidden;
+}
+
+.aegis-flow-score-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.aegis-flow-score-label {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+/* ── Check Count Pills ─────────────────────────────────────────────────── */
+
+.aegis-flow-check-counts {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.aegis-flow-check-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Handles ───────────────────────────────────────────────────────────── */
+
+.aegis-flow-handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: 2px solid #0f172a !important;
+  border-radius: 50% !important;
+}
+
+/* ── Controls ──────────────────────────────────────────────────────────── */
+
+.aegis-flow-controls {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+.aegis-flow-controls button {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+  color: #94a3b8 !important;
+  width: 28px !important;
+  height: 28px !important;
+}
+
+.aegis-flow-controls button:hover {
+  background: #334155 !important;
+  color: #e2e8f0 !important;
+}
+
+.aegis-flow-controls button svg {
+  fill: currentColor !important;
+}
+
+/* ── MiniMap ───────────────────────────────────────────────────────────── */
+
+.aegis-flow-minimap {
+  background: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ── Detail Drawer ─────────────────────────────────────────────────────── */
+
+.aegis-flow-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+  animation: aegis-fade-in 0.15s ease-out;
+}
+
+.aegis-flow-drawer {
+  width: 380px;
+  max-width: 90vw;
+  height: 100%;
+  background: #0f172a;
+  border-left: 1px solid rgba(71, 85, 105, 0.5);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: aegis-slide-in-right 0.2s ease-out;
+}
+
+.aegis-flow-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid;
+  flex-shrink: 0;
+}
+
+.aegis-flow-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.aegis-flow-drawer-section {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(71, 85, 105, 0.3);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.aegis-flow-drawer-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.aegis-flow-drawer-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  padding: 3px 0;
+}
+
+@keyframes aegis-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes aegis-slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+/* Severity badge */
+.severity-critical { color: #ef4444; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); }
+.severity-high { color: #f97316; background: rgba(249, 115, 22, 0.1); border-color: rgba(249, 115, 22, 0.3); }
+.severity-medium { color: #eab308; background: rgba(234, 179, 8, 0.1); border-color: rgba(234, 179, 8, 0.3); }
+.severity-low { color: #3b82f6; background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); }
+.severity-informational { color: #6b7280; background: rgba(107, 114, 128, 0.1); border-color: rgba(107, 114, 128, 0.3); }
+
+.status-pass { color: #22c55e; }
+.status-fail { color: #ef4444; }
+.status-warning { color: #eab308; }
+.status-inconclusive { color: #6b7280; }
+
+/* Cyber grid background */
+.bg-grid-cyber {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(56, 189, 248, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+}
+
+.bg-radial-hero {
+  background: radial-gradient(circle at 50% 0%, rgba(6, 182, 212, 0.15) 0%, rgba(14, 165, 233, 0.05) 35%, transparent 70%);
+}
+
+.bg-radial-glow {
+  background: radial-gradient(circle at center, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 20px rgba(34, 211, 238, 0.5);
+}
+
+.text-glow-emerald {
+  text-shadow: 0 0 20px rgba(52, 211, 153, 0.5);
+}
+
+.glow-card-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glow-card-hover:hover {
+  transform: translateY(-3px);
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 12px 30px -10px rgba(6, 182, 212, 0.2);
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.animate-float {
+  animation: float-slow 4s ease-in-out infinite;
+}
+

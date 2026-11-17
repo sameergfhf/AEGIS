@@ -12,19 +12,20 @@ import {
   Cell,
 } from 'recharts';
 import type { FindingsBySeverity, Finding, Severity } from '../types';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Filter, ShieldCheck, X } from 'lucide-react';
+import { SeverityBadge } from './ui/Badge';
 
 interface Props {
   findingsBySeverity: FindingsBySeverity;
   findings: Finding[];
 }
 
-const SEVERITY_CONFIG = {
-  critical: { color: '#ef4444', label: 'Critical' },
-  high: { color: '#f97316', label: 'High' },
-  medium: { color: '#eab308', label: 'Medium' },
-  low: { color: '#3b82f6', label: 'Low' },
-  informational: { color: '#6b7280', label: 'Info' },
+const SEVERITY_CONFIG: Record<Severity, { color: string; label: string }> = {
+  critical: { color: 'var(--aegis-critical-fg)', label: 'Critical' },
+  high: { color: 'var(--aegis-high-fg)', label: 'High' },
+  medium: { color: 'var(--aegis-medium-fg)', label: 'Medium' },
+  low: { color: 'var(--aegis-safe-fg)', label: 'Low' },
+  informational: { color: 'var(--color-muted)', label: 'Info' },
 };
 
 const CustomTooltip = ({ active, payload, label }: {
@@ -33,10 +34,12 @@ const CustomTooltip = ({ active, payload, label }: {
   label?: string;
 }) => {
   if (active && payload && payload.length) {
+    const sevKey = label?.toLowerCase() as Severity;
+    const color = SEVERITY_CONFIG[sevKey]?.color || 'var(--color-muted)';
     return (
-      <div className="glass-card px-3 py-2 text-xs">
-        <p className="text-slate-300 font-medium">{label}</p>
-        <p style={{ color: SEVERITY_CONFIG[label?.toLowerCase() as Severity]?.color || '#6b7280' }}>
+      <div className="border border-line-strong bg-paper px-2.5 py-2 shadow-[0_8px_24px_rgba(20,24,15,0.14)]">
+        <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">{label}</p>
+        <p className="mt-1 font-mono text-[12px] font-semibold tabular-nums" style={{ color }}>
           {payload[0].value} finding{payload[0].value !== 1 ? 's' : ''}
         </p>
       </div>
@@ -48,10 +51,10 @@ const CustomTooltip = ({ active, payload, label }: {
 export default function FindingsChart({ findingsBySeverity, findings }: Props) {
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | null>(null);
 
-  const chartData = Object.entries(SEVERITY_CONFIG).map(([key, { label }]) => ({
-    severity: label,
-    key: key as Severity,
-    count: findingsBySeverity[key as Severity],
+  const chartData = (Object.keys(SEVERITY_CONFIG) as Severity[]).map((key) => ({
+    severity: SEVERITY_CONFIG[key].label,
+    key,
+    count: findingsBySeverity[key] || 0,
   }));
 
   const filteredFindings = selectedSeverity
@@ -61,51 +64,77 @@ export default function FindingsChart({ findingsBySeverity, findings }: Props) {
   const total = Object.values(findingsBySeverity).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="glass-card glow-card-hover border border-slate-700/60 rounded-2xl p-6 fade-in space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-orange-400" />
-          <h3 className="text-base font-semibold text-white">Security Findings</h3>
+    <section className="aegis-panel flex flex-col" aria-label="Findings distribution">
+      <div className="aegis-panel-head">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-canvas text-high">
+            <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="aegis-eyebrow">Exposure / severity</p>
+            <h3 className="mt-1 truncate font-display text-[15px] font-semibold tracking-tight text-ink">
+              Vulnerability distribution
+            </h3>
+          </div>
         </div>
-        <span className="text-xs text-slate-400">{total} total</span>
+
+        <span
+          className={`inline-flex shrink-0 items-center gap-1.5 border px-2 py-1 font-mono text-[10px] uppercase tracking-[0.06em] tabular-nums ${
+            total > 0
+              ? 'border-high/30 bg-high/10 text-high'
+              : 'border-safe/30 bg-safe/10 text-safe'
+          }`}
+        >
+          {total > 0 ? `${total} issue${total !== 1 ? 's' : ''}` : 'clean'}
+        </span>
       </div>
 
       {total === 0 ? (
-        <div className="flex flex-col items-center justify-center py-8 text-slate-500">
-          <ShieldAlert className="w-8 h-8 mb-2 opacity-40" />
-          <p className="text-sm">No actionable findings detected</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+          <span className="flex h-10 w-10 items-center justify-center border border-safe/30 bg-safe/10 text-safe">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <p className="font-display text-[14px] font-semibold text-ink">Perimeter hardened</p>
+          <p className="max-w-xs text-[11.5px] leading-relaxed text-muted">
+            No active vulnerability findings were identified across the inspected vectors.
+          </p>
         </div>
       ) : (
         <>
-          <div className="h-44">
+          <div className="h-44 px-1 pt-3 sm:px-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 10, left: -15, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(71,85,105,0.3)" vertical={false} />
+              <BarChart data={chartData} margin={{ top: 4, right: 12, left: -24, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="2 4" stroke="var(--color-line)" vertical={false} />
                 <XAxis
                   dataKey="severity"
-                  tick={{ fill: '#6b7280', fontSize: 11 }}
-                  axisLine={{ stroke: 'rgba(71,85,105,0.4)' }}
+                  tick={{ fill: 'var(--color-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                  axisLine={{ stroke: 'var(--color-line)' }}
+                  tickLine={false}
+                  tickMargin={6}
                 />
                 <YAxis
                   allowDecimals={false}
-                  tick={{ fill: '#6b7280', fontSize: 11 }}
-                  axisLine={{ stroke: 'rgba(71,85,105,0.4)' }}
+                  tick={{ fill: 'var(--color-muted)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={40}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--color-canvas)' }} />
                 <Bar
                   dataKey="count"
-                  radius={[4, 4, 0, 0]}
-                  onClick={(data) => {
-                    const key = data.key as Severity;
+                  radius={[1, 1, 0, 0]}
+                  onClick={(entry) => {
+                    const key = (entry as { key: Severity }).key;
                     setSelectedSeverity(selectedSeverity === key ? null : key);
                   }}
                   cursor="pointer"
+                  isAnimationActive={false}
                 >
                   {chartData.map((entry) => (
                     <Cell
                       key={entry.key}
                       fill={SEVERITY_CONFIG[entry.key].color}
-                      opacity={selectedSeverity && selectedSeverity !== entry.key ? 0.3 : 1}
+                      opacity={selectedSeverity && selectedSeverity !== entry.key ? 0.28 : 1}
                     />
                   ))}
                 </Bar>
@@ -113,50 +142,63 @@ export default function FindingsChart({ findingsBySeverity, findings }: Props) {
             </ResponsiveContainer>
           </div>
 
-          {/* Filtered findings list */}
-          {filteredFindings.length > 0 && (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                <span>
-                  {selectedSeverity
-                    ? `Showing ${selectedSeverity} findings`
-                    : 'All findings'}
-                </span>
-                {selectedSeverity && (
-                  <button
-                    onClick={() => setSelectedSeverity(null)}
-                    className="text-cyan-400 hover:text-cyan-300"
-                  >
-                    Clear filter
-                  </button>
-                )}
-              </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-4 py-2.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+            <span className="flex items-center gap-1.5">
+              <Filter className="h-3 w-3 text-forest" aria-hidden="true" />
+              {selectedSeverity ? (
+                <>
+                  Isolated: <span className="text-ink">{selectedSeverity}</span> ({filteredFindings.length})
+                </>
+              ) : (
+                'Select a bar to isolate findings'
+              )}
+            </span>
+            {selectedSeverity ? (
+              <button
+                type="button"
+                onClick={() => setSelectedSeverity(null)}
+                className="flex min-h-8 items-center gap-1 px-1.5 text-[9.5px] uppercase tracking-[0.06em] text-forest transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+              >
+                <X className="h-3 w-3" aria-hidden="true" />
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {filteredFindings.length > 0 ? (
+            <div className="max-h-64 divide-y divide-line overflow-y-auto border-t border-line">
               {filteredFindings.map((finding) => (
-                <div
-                  key={finding.id}
-                  className="bg-slate-800/40 rounded-lg px-3 py-2 text-xs space-y-1"
-                >
+                <article key={finding.id} className="px-4 py-3.5 transition-colors hover:bg-canvas">
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-slate-200 font-medium">{finding.title}</span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full border text-xs flex-shrink-0 severity-${finding.severity}`}
-                    >
-                      {finding.severity}
-                    </span>
+                    <h4 className="min-w-0 text-[12.5px] font-semibold leading-snug text-ink">
+                      {finding.title}
+                    </h4>
+                    <SeverityBadge severity={finding.severity} size="xs" />
                   </div>
-                  <p className="text-slate-400">{finding.category}</p>
-                  {finding.description && (
-                    <p className="text-slate-500">{finding.description.slice(0, 120)}</p>
-                  )}
-                  {finding.remediation && (
-                    <p className="text-cyan-400/80 mt-1">Fix: {finding.remediation.slice(0, 150)}</p>
-                  )}
-                </div>
+                  <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted">
+                    {finding.category}
+                  </p>
+                  {finding.description ? (
+                    <p className="mt-1.5 line-clamp-2 text-[11.5px] leading-relaxed text-muted">
+                      {finding.description}
+                    </p>
+                  ) : null}
+                  {finding.remediation ? (
+                    <div className="mt-2 border-l-2 border-l-forest bg-safe/6 px-2.5 py-1.5">
+                      <p className="font-mono text-[9px] uppercase tracking-[0.1em] text-forest">
+                        Remediation
+                      </p>
+                      <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted">
+                        {finding.remediation}
+                      </p>
+                    </div>
+                  ) : null}
+                </article>
               ))}
             </div>
-          )}
+          ) : null}
         </>
       )}
-    </div>
+    </section>
   );
 }

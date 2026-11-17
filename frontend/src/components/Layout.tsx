@@ -1,141 +1,80 @@
-// src/components/Layout.tsx — App shell with sidebar navigation + user session
-import { NavLink, Outlet, Link } from 'react-router-dom';
-import {
-  Shield,
-  LayoutDashboard,
-  History,
-  FileCode2,
-  Settings,
-  LogOut,
-  User,
-  Globe,
-} from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { NavLink, Outlet, Link, useLocation } from 'react-router-dom';
+import { LayoutDashboard, History, FileCode2, Settings, LogOut, Users, ChevronDown, Plus, Globe, ShieldCheck, Check, Building2, Activity } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
+import { ThemeToggle } from './ui';
+import BrandLogo from './BrandLogo';
 import toast from 'react-hot-toast';
 
 const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/history', icon: History, label: 'Scan History' },
-  { to: '/spec', icon: FileCode2, label: 'API Spec' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
-  { to: '/', icon: Globe, label: 'Landing Page' },
+  { to: '/dashboard', label: 'Overview', exact: true, icon: LayoutDashboard },
+  { to: '/spec', label: 'API catalog', icon: FileCode2 },
+  { to: '/history', label: 'Scan history', icon: History },
+  { to: '/team', label: 'Team & access', icon: Users },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
+const routeNames: Record<string, string> = { dashboard: 'Overview', history: 'Scan history', team: 'Team & access', spec: 'API catalog', 'operation-scan': 'Operation scan', settings: 'Settings', scan: 'Scan report' };
 
 export default function Layout({ children }: { children?: React.ReactNode } = {}) {
+  const location = useLocation();
   const { user, signOut } = useAuth();
-
-  async function handleSignOut() {
-    await signOut();
-    toast.success('Signed out successfully.');
-  }
-
-  // Determine display name from user metadata
-  const displayName =
-    user?.user_metadata?.full_name ??
-    user?.user_metadata?.name ??
-    user?.email?.split('@')[0] ??
-    'Security Analyst';
-
-  const avatarUrl: string | undefined =
-    user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture;
-
-  return (
-    <div className="flex h-screen bg-[#020617] overflow-hidden text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200">
-      {/* ── Left Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="w-64 flex-shrink-0 flex flex-col border-r border-slate-800/80 bg-slate-950/70 backdrop-blur-2xl z-20">
-        {/* Logo & Product Title */}
-        <Link
-          to="/dashboard"
-          className="flex items-center gap-3 px-6 py-5 border-b border-slate-800/70 group hover:bg-slate-900/40 transition-all"
-        >
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-md shadow-cyan-500/25 group-hover:shadow-cyan-400/40 transition-all">
-            <Shield className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-base font-extrabold text-white leading-tight group-hover:text-cyan-300 transition-colors">
-                AEGIS
-              </span>
-              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">
-                PRO
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium">Observable Defense</p>
-          </div>
-        </Link>
-
-        {/* Navigation Links */}
-        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/dashboard' || to === '/'}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-150 ${
-                  isActive
-                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm shadow-cyan-500/10'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
-                }`
-              }
-            >
-              <Icon className="w-4 h-4" />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-
-        {/* Sidebar Bottom Controls */}
-        <div className="p-4 space-y-3 border-t border-slate-800/70 bg-slate-950/40">
-          {/* Active Security Engine Status */}
-          <div className="glass-card px-3 py-2 flex items-center justify-between border border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-[11px] font-semibold text-slate-300">Backend Connected</span>
-            </div>
-            <span className="text-[10px] text-emerald-400 font-mono font-bold">443 / 8000</span>
-          </div>
-
-          {/* User profile & signout button */}
-          <div className="glass-card px-3 py-2.5 flex items-center gap-2.5 border border-slate-800">
-            {avatarUrl ? (
-              <img
-                src={avatarUrl}
-                alt={displayName}
-                className="w-8 h-8 rounded-full object-cover border border-cyan-500/40 shadow-sm shadow-cyan-500/20"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-500/30 to-blue-600/30 border border-slate-700 flex items-center justify-center flex-shrink-0">
-                <User className="w-4 h-4 text-cyan-400" />
-              </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-white truncate">{displayName}</p>
-              {user?.email ? (
-                <p className="text-[10px] text-slate-500 truncate font-mono">{user.email}</p>
-              ) : (
-                <p className="text-[10px] text-cyan-400">Security Analyst</p>
-              )}
-            </div>
-            <button
-              id="sidebar-signout-btn"
-              onClick={handleSignOut}
-              title="Sign out of console"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0 cursor-pointer"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </div>
+  const { workspaces, currentWorkspace, setCurrentWorkspace, invitations } = useWorkspace();
+  const [openMenu, setOpenMenu] = useState<'workspace' | 'account' | null>(null);
+  useEffect(() => setOpenMenu(null), [location.pathname]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpenMenu(null); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+  const displayName = user?.user_metadata?.full_name ?? user?.user_metadata?.name ?? user?.email?.split('@')[0] ?? 'Operator';
+  const avatarUrl: string | undefined = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture;
+  const initials = displayName.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part: string) => part[0]?.toUpperCase()).join('');
+  const sectionName = routeNames[location.pathname.split('/').filter(Boolean)[0] ?? 'dashboard'] ?? 'Console';
+  const close = () => setOpenMenu(null);
+  const signOutNow = async () => { close(); await signOut(); toast.success('Signed out.'); };
+  const WorkspaceOptions = () => <div className="layout-menu" role="menu" aria-label="Switch workspace">
+    <p className="layout-menu-label">Your workspaces</p>
+    {workspaces.length ? workspaces.map((ws) => <button key={ws.id} type="button" role="menuitemradio" aria-checked={ws.id === currentWorkspace?.id} onClick={() => { setCurrentWorkspace(ws); close(); }} className="layout-menu-item"><span>{ws.name}</span><span className="layout-menu-meta">{ws.role}{ws.id === currentWorkspace?.id && <Check size={15} />}</span></button>) : <p className="layout-menu-empty">No workspaces yet</p>}
+    <Link to="/team" onClick={close} className="layout-menu-item"><span><Plus size={15} /> Manage workspaces</span><span /></Link>
+  </div>;
+  const AccountOptions = () => <div className="layout-menu account-menu" role="menu" aria-label="Account">
+    <div className="account-menu-heading"><strong>{displayName}</strong><span>{user?.email}</span></div>
+    <Link to="/team" role="menuitem" onClick={close} className="layout-menu-item"><span><Users size={15} /> Team & workspaces</span><span /></Link>
+    <Link to="/" role="menuitem" onClick={close} className="layout-menu-item"><span><Globe size={15} /> Public site</span><span /></Link>
+    <Link to="/settings" role="menuitem" onClick={close} className="layout-menu-item"><span><Settings size={15} /> Configuration & health</span><span /></Link>
+    <button type="button" role="menuitem" onClick={signOutNow} className="layout-menu-item layout-signout"><span><LogOut size={15} /> Sign out</span><span /></button>
+  </div>;
+  return <div className="aegis-shell app-layout">
+    <a className="skip-link" href="#main-content">Skip to main content</a>
+    <aside className="app-sidebar">
+      <div className="sidebar-brand"><BrandLogo to="/dashboard" size="md" /><span className="sidebar-version">SECURITY PLATFORM</span></div>
+      <button type="button" className="workspace-switch" aria-haspopup="menu" aria-expanded={openMenu === 'workspace'} onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}>
+        <span className="workspace-icon"><Building2 size={17} /></span><span className="workspace-copy"><small>WORKSPACE</small><strong>{currentWorkspace?.name ?? 'Personal workspace'}</strong></span><ChevronDown size={16} className={openMenu === 'workspace' ? 'rotate-180' : ''} />
+      </button>
+      {openMenu === 'workspace' && <><button className="menu-scrim" aria-label="Close workspace menu" onClick={close} /><WorkspaceOptions /></>}
+      <div className="sidebar-section-title">YOUR WORKSPACE</div>
+      <nav aria-label="Primary" className="sidebar-nav">
+        {navItems.map(({ to, label, exact, icon: Icon }) => <NavLink key={to} to={to} end={exact} title={label} className="sidebar-link"><Icon size={18} strokeWidth={1.8} /><span>{label}</span>{to === '/team' && invitations.length > 0 && <span className="nav-count">{invitations.length}</span>}</NavLink>)}
+      </nav>
+      <div className="sidebar-tools-label">TOOLS</div>
+      <nav aria-label="Scan tools" className="sidebar-nav sidebar-tool-nav">
+        <NavLink to="/operation-scan" title="Operation scan" className="sidebar-link"><Activity size={18} strokeWidth={1.8} /><span>Operation scan</span></NavLink>
+        <NavLink to="/" title="Public API check" className="sidebar-link"><Globe size={18} strokeWidth={1.8} /><span>Public API check</span></NavLink>
+      </nav>
+      <div className="sidebar-bottom">
+        <div className="sidebar-health"><span className="health-icon"><Activity size={17} /></span><span><strong>All systems operational</strong><small>Security services online</small></span><i /></div>
+        <div className="sidebar-user">
+          <div className="user-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : initials || 'OP'}</div>
+          <div className="user-copy"><strong>{displayName}</strong><span>{user?.email}</span></div>
+          <div className="relative"><button className="user-menu-trigger" aria-label={`Account menu for ${displayName}`} aria-haspopup="menu" aria-expanded={openMenu === 'account'} onClick={() => setOpenMenu(openMenu === 'account' ? null : 'account')}><ChevronDown size={17} /></button>{openMenu === 'account' && <><button className="menu-scrim" aria-label="Close account menu" onClick={close} /><AccountOptions /></>}</div>
         </div>
-      </aside>
-
-      {/* ── Main Viewport with Ambient Grid Background ────────────────────────── */}
-      <main className="flex-1 overflow-auto relative">
-        <div className="absolute inset-0 bg-grid-cyber pointer-events-none opacity-30" />
-        <div className="relative z-10">
-          {children ?? <Outlet />}
-        </div>
-      </main>
+      </div>
+    </aside>
+    <div className="app-content">
+      <header className="app-topbar"><div className="topbar-title"><span className="topbar-mark"><ShieldCheck size={17} /></span><span>AEGIS</span><span className="topbar-divider">/</span><span className="topbar-section">{sectionName}</span></div><div className="topbar-actions"><span className="service-status"><i /> Services online</span><div className="mobile-workspace-menu"><button type="button" className="mobile-menu-trigger" aria-label="Switch workspace" aria-haspopup="menu" aria-expanded={openMenu === 'workspace'} onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}><Building2 size={17} /></button>{openMenu === 'workspace' && <><button className="menu-scrim" aria-label="Close workspace menu" onClick={close} /><WorkspaceOptions /></>}</div><ThemeToggle /><Link to="/dashboard" className="aegis-signal-action"><Plus size={17} /> New scan</Link><div className="mobile-account-menu"><button type="button" className="mobile-menu-trigger" aria-label={`Account menu for ${displayName}`} aria-haspopup="menu" aria-expanded={openMenu === 'account'} onClick={() => setOpenMenu(openMenu === 'account' ? null : 'account')}>{avatarUrl ? <img src={avatarUrl} alt="" /> : initials || 'OP'}</button>{openMenu === 'account' && <><button className="menu-scrim" aria-label="Close account menu" onClick={close} /><AccountOptions /></>}</div></div></header>
+      <main id="main-content" tabIndex={-1} className="aegis-main focus:outline-none">{children ?? <Outlet />}</main>
+      <nav aria-label="Primary mobile" className="aegis-bottomnav">{navItems.map(({ to, label, exact, icon: Icon }) => <NavLink key={to} to={to} end={exact} aria-label={label}><Icon size={18} /><span>{label}</span></NavLink>)}</nav>
     </div>
-  );
+  </div>;
 }

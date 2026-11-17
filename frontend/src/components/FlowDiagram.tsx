@@ -1,4 +1,4 @@
-// src/components/FlowDiagram.tsx — Professional API Behavior Flow with Dagre auto-layout
+// src/components/FlowDiagram.tsx ? Professional API Behavior Flow with Dagre auto-layout
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
@@ -45,7 +45,7 @@ interface Props {
   flow: FlowGraph;
 }
 
-/* ───────────────────────────────── Icon Map ─────────────────────────────────── */
+/* --------------------------------- Icon Map ----------------------------------- */
 
 const ICON_MAP: Record<string, React.FC<{ className?: string; style?: React.CSSProperties }>> = {
   globe: Globe,
@@ -66,56 +66,56 @@ const ICON_MAP: Record<string, React.FC<{ className?: string; style?: React.CSSP
   'file-text': FileText,
 };
 
-/* ─────────────────────────────── Status Colors ─────────────────────────────── */
+/* ------------------------------- Status Colors ------------------------------- */
 
 const STATUS_CONFIG: Record<string, { border: string; bg: string; text: string; glow: string; badge: string; badgeText: string }> = {
   completed: {
-    border: '#22c55e',
-    bg: 'rgba(20, 83, 45, 0.7)',
-    text: '#86efac',
-    glow: 'rgba(34, 197, 94, 0.12)',
-    badge: 'rgba(34, 197, 94, 0.15)',
-    badgeText: '#4ade80',
+    border: 'var(--aegis-safe-fg)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-ink)',
+    glow: 'transparent',
+    badge: 'var(--aegis-safe-bg)',
+    badgeText: 'var(--aegis-safe-fg)',
   },
   failed: {
-    border: '#ef4444',
-    bg: 'rgba(69, 10, 10, 0.7)',
-    text: '#fca5a5',
-    glow: 'rgba(239, 68, 68, 0.12)',
-    badge: 'rgba(239, 68, 68, 0.15)',
-    badgeText: '#f87171',
+    border: 'var(--aegis-critical-fg)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-ink)',
+    glow: 'transparent',
+    badge: 'var(--aegis-critical-bg)',
+    badgeText: 'var(--aegis-critical-fg)',
   },
   warning: {
-    border: '#f59e0b',
-    bg: 'rgba(69, 40, 3, 0.7)',
-    text: '#fcd34d',
-    glow: 'rgba(245, 158, 11, 0.12)',
-    badge: 'rgba(245, 158, 11, 0.15)',
-    badgeText: '#fbbf24',
+    border: 'var(--aegis-medium-fg)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-ink)',
+    glow: 'transparent',
+    badge: 'var(--aegis-medium-bg)',
+    badgeText: 'var(--aegis-medium-fg)',
   },
   skipped: {
-    border: '#6b7280',
-    bg: 'rgba(31, 41, 55, 0.7)',
-    text: '#9ca3af',
-    glow: 'rgba(107, 114, 128, 0.08)',
-    badge: 'rgba(107, 114, 128, 0.15)',
-    badgeText: '#9ca3af',
+    border: 'var(--color-line-strong)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-muted)',
+    glow: 'transparent',
+    badge: 'var(--color-elevated)',
+    badgeText: 'var(--color-muted)',
   },
   inconclusive: {
-    border: '#6b7280',
-    bg: 'rgba(31, 41, 55, 0.7)',
-    text: '#9ca3af',
-    glow: 'rgba(107, 114, 128, 0.08)',
-    badge: 'rgba(107, 114, 128, 0.15)',
-    badgeText: '#9ca3af',
+    border: 'var(--color-line-strong)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-muted)',
+    glow: 'transparent',
+    badge: 'var(--color-elevated)',
+    badgeText: 'var(--color-muted)',
   },
   running: {
-    border: '#3b82f6',
-    bg: 'rgba(30, 58, 95, 0.7)',
-    text: '#93c5fd',
-    glow: 'rgba(59, 130, 246, 0.12)',
-    badge: 'rgba(59, 130, 246, 0.15)',
-    badgeText: '#60a5fa',
+    border: 'var(--aegis-info-fg)',
+    bg: 'var(--color-canvas)',
+    text: 'var(--color-ink)',
+    glow: 'transparent',
+    badge: 'var(--aegis-info-bg)',
+    badgeText: 'var(--aegis-info-fg)',
   },
 };
 
@@ -125,7 +125,7 @@ function getStatusConfig(status?: string) {
   return STATUS_CONFIG[status || 'completed'] || DEFAULT_STATUS;
 }
 
-/* ───────────────────────────── Status Badge ─────────────────────────────── */
+/* ----------------------------- Status Badge ------------------------------- */
 
 function StatusDot({ status }: { status?: string }) {
   const config = getStatusConfig(status);
@@ -141,7 +141,7 @@ function StatusDot({ status }: { status?: string }) {
   );
 }
 
-/* ──────────────────────── Lifecycle Stage Node ──────────────────────────── */
+/* ------------------------ Lifecycle Stage Node ---------------------------- */
 
 function StageNode({ data }: NodeProps) {
   const stageStatus = (data.stage_status as string) || 'completed';
@@ -163,7 +163,7 @@ function StageNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} className="aegis-flow-handle" style={{ background: config.border }} />
       <div className="aegis-flow-node-header">
-        <div className="aegis-flow-node-icon" style={{ background: config.badge, borderColor: `${config.border}44` }}>
+        <div className="aegis-flow-node-icon" style={{ background: config.badge, borderColor: config.border }}>
           <IconComp className="w-3.5 h-3.5" style={{ color: config.badgeText }} />
         </div>
         <div className="aegis-flow-node-title-group">
@@ -176,12 +176,12 @@ function StageNode({ data }: NodeProps) {
       )}
       <div className="aegis-flow-node-meta">
         {statusCode !== undefined && statusCode !== null && (
-          <span className="aegis-flow-node-tag" style={{ color: typeof statusCode === 'number' && statusCode < 400 ? '#4ade80' : '#fbbf24' }}>
+          <span className="aegis-flow-node-tag" style={{ color: typeof statusCode === 'number' && statusCode < 400 ? 'var(--aegis-safe-fg)' : 'var(--aegis-medium-fg)' }}>
             HTTP {statusCode}
           </span>
         )}
         {findingCount !== undefined && findingCount > 0 && (
-          <span className="aegis-flow-node-tag" style={{ color: '#f87171' }}>
+          <span className="aegis-flow-node-tag" style={{ color: 'var(--aegis-critical-fg)' }}>
             {findingCount} finding{findingCount !== 1 ? 's' : ''}
           </span>
         )}
@@ -191,7 +191,7 @@ function StageNode({ data }: NodeProps) {
   );
 }
 
-/* ──────────────────────── Security Check Node ──────────────────────────── */
+/* ------------------------ Security Check Node ---------------------------- */
 
 function SecurityCheckNode({ data }: NodeProps) {
   const stageStatus = (data.stage_status as string) || 'completed';
@@ -216,7 +216,7 @@ function SecurityCheckNode({ data }: NodeProps) {
     >
       <Handle type="target" position={Position.Left} className="aegis-flow-handle" style={{ background: config.border }} />
       <div className="aegis-flow-node-header">
-        <div className="aegis-flow-node-icon" style={{ background: config.badge, borderColor: `${config.border}44` }}>
+        <div className="aegis-flow-node-icon" style={{ background: config.badge, borderColor: config.border }}>
           <IconComp className="w-3.5 h-3.5" style={{ color: config.badgeText }} />
         </div>
         <div className="aegis-flow-node-title-group">
@@ -244,17 +244,17 @@ function SecurityCheckNode({ data }: NodeProps) {
       {/* Finding counts */}
       <div className="aegis-flow-check-counts">
         {passCount > 0 && (
-          <span className="aegis-flow-check-pill" style={{ color: '#4ade80', background: 'rgba(34,197,94,0.1)' }}>
+          <span className="aegis-flow-check-pill" style={{ color: 'var(--aegis-safe-fg)', background: 'var(--aegis-safe-bg)' }}>
             <CheckCircle className="w-2.5 h-2.5" /> {passCount}
           </span>
         )}
         {warnCount > 0 && (
-          <span className="aegis-flow-check-pill" style={{ color: '#fbbf24', background: 'rgba(245,158,11,0.1)' }}>
+          <span className="aegis-flow-check-pill" style={{ color: 'var(--aegis-medium-fg)', background: 'var(--aegis-medium-bg)' }}>
             <AlertTriangle className="w-2.5 h-2.5" /> {warnCount}
           </span>
         )}
         {failCount > 0 && (
-          <span className="aegis-flow-check-pill" style={{ color: '#f87171', background: 'rgba(239,68,68,0.1)' }}>
+          <span className="aegis-flow-check-pill" style={{ color: 'var(--aegis-critical-fg)', background: 'var(--aegis-critical-bg)' }}>
             <XCircle className="w-2.5 h-2.5" /> {failCount}
           </span>
         )}
@@ -269,7 +269,7 @@ function SecurityCheckNode({ data }: NodeProps) {
   );
 }
 
-/* ────────────────────────── Register Node Types ────────────────────────── */
+/* -------------------------- Register Node Types -------------------------- */
 
 const nodeTypes: Record<string, React.ComponentType<NodeProps>> = {
   input: StageNode,
@@ -288,7 +288,7 @@ const nodeTypes: Record<string, React.ComponentType<NodeProps>> = {
   result: StageNode,
 };
 
-/* ─────────────────────────── Dagre Layout ───────────────────────────────── */
+/* --------------------------- Dagre Layout --------------------------------- */
 
 const NODE_WIDTH = 210;
 const NODE_HEIGHT_STAGE = 100;
@@ -333,7 +333,7 @@ function getLayoutedElements(nodes: Node[], edges: Edge[]): { nodes: Node[]; edg
   return { nodes: layoutedNodes, edges };
 }
 
-/* ─────────────────────────── Detail Drawer ──────────────────────────────── */
+/* --------------------------- Detail Drawer -------------------------------- */
 
 interface DrawerProps {
   node: FlowGraph['nodes'][0] | null;
@@ -348,23 +348,23 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
 
   return (
     <div className="aegis-flow-drawer-overlay" onClick={onClose}>
-      <div className="aegis-flow-drawer" onClick={(e) => e.stopPropagation()}>
+      <div className="aegis-flow-drawer" role="dialog" aria-modal="true" aria-label={`${node.label} flow details`} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="aegis-flow-drawer-header" style={{ borderBottomColor: `${config.border}33` }}>
+        <div className="aegis-flow-drawer-header" style={{ borderBottomColor: config.border }}>
           <div className="flex items-center gap-2.5">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: config.badge, border: `1px solid ${config.border}33` }}
+              className="flex h-8 w-8 items-center justify-center rounded-[6px]"
+              style={{ background: config.badge, border: `1px solid ${config.border}` }}
             >
-              <IconComp className="w-4 h-4" style={{ color: config.badgeText }} />
+              <IconComp className="h-4 w-4" style={{ color: config.badgeText }} />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white">{node.label}</h3>
+              <h3 className="text-[13.5px] font-semibold text-ink">{node.label}</h3>
               <StatusDot status={data.stage_status} />
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={onClose} aria-label="Close flow details" className="flex h-11 w-11 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]">
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -374,18 +374,18 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
           {data.description && (
             <div className="aegis-flow-drawer-section">
               <h4 className="aegis-flow-drawer-section-title">What Happened</h4>
-              <p className="text-xs text-slate-300 leading-relaxed">{data.description}</p>
+              <p className="text-xs text-muted leading-relaxed">{data.description}</p>
             </div>
           )}
 
           {/* Error/Reason */}
           {(data.error || data.reason) && (
-            <div className="aegis-flow-drawer-section" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
-              <h4 className="aegis-flow-drawer-section-title" style={{ color: '#f87171' }}>
+            <div className="aegis-flow-drawer-section" style={{ background: 'var(--aegis-critical-bg)', borderColor: 'var(--aegis-critical-fg)' }}>
+              <h4 className="aegis-flow-drawer-section-title" style={{ color: 'var(--aegis-critical-fg)' }}>
                 <AlertTriangle className="w-3 h-3 inline mr-1" />
                 Error Details
               </h4>
-              <p className="text-xs text-red-300 leading-relaxed font-mono">{data.error || data.reason}</p>
+              <p className="font-mono text-sm leading-relaxed text-critical">{data.error || data.reason}</p>
             </div>
           )}
 
@@ -395,64 +395,64 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
             <div className="space-y-1.5">
               {data.stage && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Stage</span>
-                  <span className="text-slate-200 font-mono">{data.stage}</span>
+                  <span className="text-faint">Stage</span>
+                  <span className="text-ink font-mono">{data.stage}</span>
                 </div>
               )}
               {data.resolved_ip && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Resolved IP</span>
-                  <span className="text-cyan-400 font-mono">{data.resolved_ip}</span>
+                  <span className="text-faint">Resolved IP</span>
+                  <span className="text-forest font-mono">{data.resolved_ip}</span>
                 </div>
               )}
               {data.method && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">HTTP Method</span>
-                  <span className="text-slate-200 font-mono">{data.method}</span>
+                  <span className="text-faint">HTTP Method</span>
+                  <span className="text-ink font-mono">{data.method}</span>
                 </div>
               )}
               {data.status_code !== undefined && data.status_code !== null && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Status Code</span>
-                  <span className={`font-mono font-bold ${typeof data.status_code === 'number' && data.status_code < 400 ? 'text-green-400' : 'text-amber-400'}`}>
+                  <span className="text-faint">Status Code</span>
+                  <span className={`font-mono font-bold ${typeof data.status_code === 'number' && data.status_code < 400 ? 'text-safe' : 'text-high'}`}>
                     {data.status_code}
                   </span>
                 </div>
               )}
               {data.content_type && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Content-Type</span>
-                  <span className="text-slate-200 font-mono text-[10px]">{data.content_type}</span>
+                  <span className="text-faint">Content-Type</span>
+                  <span className="text-ink font-mono text-[10px]">{data.content_type}</span>
                 </div>
               )}
               {data.response_size_bytes !== undefined && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Response Size</span>
-                  <span className="text-slate-200 font-mono">{(data.response_size_bytes / 1024).toFixed(1)} KB</span>
+                  <span className="text-faint">Response Size</span>
+                  <span className="text-ink font-mono">{(data.response_size_bytes / 1024).toFixed(1)} KB</span>
                 </div>
               )}
               {data.redirect_count !== undefined && data.redirect_count > 0 && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Redirects</span>
-                  <span className="text-amber-400 font-mono">{data.redirect_count} hop{data.redirect_count !== 1 ? 's' : ''}</span>
+                  <span className="text-faint">Redirects</span>
+                  <span className="text-high font-mono">{data.redirect_count} hop{data.redirect_count !== 1 ? 's' : ''}</span>
                 </div>
               )}
               {data.duration_ms !== undefined && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Duration</span>
-                  <span className="text-slate-200 font-mono">{data.duration_ms.toFixed(0)}ms</span>
+                  <span className="text-faint">Duration</span>
+                  <span className="text-ink font-mono">{data.duration_ms.toFixed(0)}ms</span>
                 </div>
               )}
               {data.provider && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Provider</span>
-                  <span className="text-purple-400 font-mono">{data.provider}</span>
+                  <span className="text-faint">Provider</span>
+                  <span className="text-muted font-mono">{data.provider}</span>
                 </div>
               )}
               {data.destination && (
                 <div className="aegis-flow-drawer-detail-row">
-                  <span className="text-slate-500">Destination</span>
-                  <span className="text-amber-300 font-mono text-[10px] break-all">{data.destination}</span>
+                  <span className="text-faint">Destination</span>
+                  <span className="break-all font-mono text-xs text-high">{data.destination}</span>
                 </div>
               )}
             </div>
@@ -463,9 +463,9 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
             <div className="aegis-flow-drawer-section">
               <h4 className="aegis-flow-drawer-section-title">Security Score</h4>
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
+                <div className="h-2 flex-1 overflow-hidden rounded-[4px] bg-elevated">
                   <div
-                    className="h-full rounded-full transition-all"
+                    className="h-full rounded-[4px] transition-all"
                     style={{
                       width: `${Math.min(100, (data.earned_points / data.max_points) * 100)}%`,
                       background: config.border,
@@ -485,17 +485,17 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
               <h4 className="aegis-flow-drawer-section-title">Findings Breakdown</h4>
               <div className="flex items-center gap-2 flex-wrap">
                 {(data.findings_pass ?? 0) > 0 && (
-                  <span className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="flex items-center gap-1 rounded-[6px] border border-safe/25 bg-forest/8 px-2 py-1 text-[11px] text-safe">
                     <CheckCircle className="w-3 h-3" /> {data.findings_pass} passed
                   </span>
                 )}
                 {(data.findings_warning ?? 0) > 0 && (
-                  <span className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                  <span className="flex items-center gap-1 rounded-[6px] border border-high/25 bg-high/10 px-2 py-1 text-[11px] text-high">
                     <AlertTriangle className="w-3 h-3" /> {data.findings_warning} warning{data.findings_warning !== 1 ? 's' : ''}
                   </span>
                 )}
                 {(data.findings_fail ?? 0) > 0 && (
-                  <span className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20">
+                  <span className="flex items-center gap-1 rounded-[6px] border border-critical/25 bg-critical/10 px-2 py-1 text-[11px] text-critical">
                     <XCircle className="w-3 h-3" /> {data.findings_fail} failed
                   </span>
                 )}
@@ -509,8 +509,8 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
               <h4 className="aegis-flow-drawer-section-title">Additional Information</h4>
               <ul className="space-y-1">
                 {data.detail_items.map((item, i) => (
-                  <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
-                    <ChevronRight className="w-3 h-3 mt-0.5 text-slate-500 flex-shrink-0" />
+                  <li key={i} className="flex items-start gap-2 text-xs text-muted">
+                    <ChevronRight className="w-3 h-3 mt-0.5 text-faint flex-shrink-0" />
                     <span className="leading-relaxed">{item}</span>
                   </li>
                 ))}
@@ -523,14 +523,14 @@ function DetailDrawer({ node, onClose }: DrawerProps) {
   );
 }
 
-/* ────────────────────────── Edge Defaults ───────────────────────────────── */
+/* -------------------------- Edge Defaults --------------------------------- */
 
 const DEFAULT_EDGE_STYLE = {
-  stroke: '#475569',
+  stroke: 'var(--color-line-strong)',
   strokeWidth: 1.5,
 };
 
-/* ─────────────────────────── Inner Flow ─────────────────────────────────── */
+/* --------------------------- Inner Flow ----------------------------------- */
 
 function FlowDiagramInner({ flow }: Props) {
   const [selectedNode, setSelectedNode] = useState<FlowGraph['nodes'][0] | null>(null);
@@ -553,8 +553,8 @@ function FlowDiagramInner({ flow }: Props) {
       animated: e.animated,
       type: 'smoothstep',
       style: { ...DEFAULT_EDGE_STYLE, ...(e.style || {}) },
-      labelStyle: { fill: '#94a3b8', fontSize: 10, fontFamily: 'Inter, sans-serif' },
-      labelBgStyle: { fill: '#0f172a', fillOpacity: 0.85 },
+      labelStyle: { fill: 'var(--color-muted)', fontSize: 12, fontFamily: 'IBM Plex Mono, monospace' },
+      labelBgStyle: { fill: 'var(--color-paper)', fillOpacity: 1 },
       labelBgPadding: [6, 4] as [number, number],
       labelBgBorderRadius: 4,
     }));
@@ -565,7 +565,7 @@ function FlowDiagramInner({ flow }: Props) {
 
   // Fit view when layout changes
   useEffect(() => {
-    const timer = setTimeout(() => fitView({ padding: 0.3, duration: 300, maxZoom: 0.7 }), 80);
+    const timer = setTimeout(() => fitView({ padding: 0.16, duration: 300, maxZoom: 1 }), 80);
     return () => clearTimeout(timer);
   }, [layoutedNodes, fitView]);
 
@@ -577,9 +577,18 @@ function FlowDiagramInner({ flow }: Props) {
   return (
     <div className="aegis-flow-container">
       <div className="aegis-flow-header">
-        <Network className="w-4 h-4 text-blue-400" />
-        <h3 className="text-base font-semibold text-white">API Behavior Flow</h3>
-        <span className="text-xs text-slate-500 ml-1">Click nodes to inspect details</span>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-paper text-forest">
+          <Network className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="aegis-eyebrow">Trace / request lifecycle</p>
+          <h3 className="mt-0.5 font-display text-[15px] font-semibold tracking-tight text-ink">
+            API behaviour flow
+          </h3>
+        </div>
+        <span className="ml-auto hidden font-mono text-[9px] uppercase tracking-[0.08em] text-muted sm:block">
+          Click a node to inspect
+        </span>
         <span className="aegis-flow-node-count">{flow.nodes.length} stages</span>
       </div>
 
@@ -590,13 +599,15 @@ function FlowDiagramInner({ flow }: Props) {
           nodeTypes={nodeTypes}
           onNodeClick={onNodeClick}
           fitView
-          fitViewOptions={{ padding: 0.3, maxZoom: 0.7 }}
+          fitViewOptions={{ padding: 0.16, maxZoom: 1 }}
           attributionPosition="bottom-right"
           minZoom={0.3}
           maxZoom={1.8}
           proOptions={{ hideAttribution: true }}
+          edgesFocusable={false}
+          nodesConnectable={false}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="rgba(71,85,105,0.25)" />
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--color-line)" />
           <Controls
             className="aegis-flow-controls"
             showInteractive={false}
@@ -607,7 +618,7 @@ function FlowDiagramInner({ flow }: Props) {
               return getStatusConfig(status).border;
             }}
             className="aegis-flow-minimap"
-            maskColor="rgba(15, 23, 42, 0.8)"
+            maskColor="color-mix(in srgb, var(--color-canvas) 70%, transparent)"
           />
         </ReactFlow>
       </div>
@@ -618,19 +629,26 @@ function FlowDiagramInner({ flow }: Props) {
   );
 }
 
-/* ─────────────────────────── Exported Wrapper ──────────────────────────── */
+/* --------------------------- Exported Wrapper ---------------------------- */
 
 export default function FlowDiagram({ flow }: Props) {
   if (!flow || !flow.nodes || flow.nodes.length === 0) {
     return (
       <div className="aegis-flow-container">
         <div className="aegis-flow-header">
-          <Network className="w-4 h-4 text-blue-400" />
-          <h3 className="text-base font-semibold text-white">API Behavior Flow</h3>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-paper text-forest">
+            <Network className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="aegis-eyebrow">Trace / request lifecycle</p>
+            <h3 className="mt-0.5 font-display text-[15px] font-semibold tracking-tight text-ink">
+              API behaviour flow
+            </h3>
+          </div>
         </div>
-        <div className="aegis-flow-empty">
-          <Info className="w-6 h-6 text-slate-600 mb-2" />
-          <p className="text-xs text-slate-500">No flow data available for this scan.</p>
+        <div className="aegis-flow-empty" role="status">
+          <Info className="mb-2 h-6 w-6 text-muted" aria-hidden="true" />
+          <p className="text-[11.5px] text-muted">No flow data available for this scan.</p>
         </div>
       </div>
     );

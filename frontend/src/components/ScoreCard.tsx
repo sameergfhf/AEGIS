@@ -1,49 +1,62 @@
-// src/components/ScoreCard.tsx — Security Assessment Score display
-import type { Scan } from '../types';
-import { CheckCircle2, XCircle, AlertTriangle, HelpCircle, Clock, AlertOctagon, ShieldCheck } from 'lucide-react';
+// src/components/ScoreCard.tsx — Security Assessment Score display with balanced telemetry
+import type { Scan, Finding, FindingsBySeverity } from '../types';
+import { Clock, CheckCircle2, XCircle, AlertTriangle, MinusCircle } from 'lucide-react';
+import { SeverityBadge } from './ui';
 
 interface Props {
   scan: Scan;
+  findings?: Finding[];
+  findingsBySeverity?: FindingsBySeverity;
 }
 
-function getScoreColor(score?: number): string {
-  if (score === undefined || score === null) return '#64748b';
-  if (score >= 90) return '#10b981';
-  if (score >= 75) return '#06b6d4';
-  if (score >= 50) return '#eab308';
-  return '#ef4444';
+function getScoreTheme(score?: number | null) {
+  if (score === undefined || score === null) {
+    return {
+      color: 'var(--color-muted)',
+      grade: '—',
+      label: 'No assessment data',
+      ring: 'var(--color-line-strong)',
+    };
+  }
+  if (score >= 90) {
+    return {
+      color: 'var(--aegis-safe-fg)',
+      grade: 'A+',
+      label: 'Hardened perimeter',
+      ring: 'var(--aegis-safe-fg)',
+    };
+  }
+  if (score >= 75) {
+    return {
+      color: 'var(--aegis-info-fg)',
+      grade: 'B',
+      label: 'Satisfactory posture',
+      ring: 'var(--aegis-info-fg)',
+    };
+  }
+  if (score >= 50) {
+    return {
+      color: 'var(--aegis-medium-fg)',
+      grade: 'C',
+      label: 'Weaknesses present',
+      ring: 'var(--aegis-medium-fg)',
+    };
+  }
+  return {
+    color: 'var(--aegis-critical-fg)',
+    grade: 'F',
+    label: 'Critical exposures detected',
+    ring: 'var(--aegis-critical-fg)',
+  };
 }
-
-function getScoreLabel(score?: number): string {
-  if (score === undefined || score === null) return 'No Assessment Data';
-  if (score >= 90) return 'Hardened Perimeter (A+)';
-  if (score >= 75) return 'Satisfactory Posture (B)';
-  if (score >= 50) return 'Weaknesses Present (C)';
-  return 'Critical Exposures (F)';
-}
-
-const SEVERITY_ICONS: Record<string, { icon: React.ComponentType<{ className?: string }>, color: string }> = {
-  critical: { icon: AlertOctagon, color: 'text-red-400' },
-  high: { icon: AlertTriangle, color: 'text-orange-400' },
-  medium: { icon: AlertTriangle, color: 'text-yellow-400' },
-  low: { icon: AlertTriangle, color: 'text-blue-400' },
-};
 
 export default function ScoreCard({ scan }: Props) {
   const score = scan.assessment_score;
-  const scoreColor = getScoreColor(score);
-  const scoreLabel = getScoreLabel(score);
-  const circumference = 2 * Math.PI * 40; // radius=40
-  const dashOffset = score !== undefined && score !== null
-    ? circumference * (1 - score / 100)
-    : circumference;
-
-  const SeverityIcon = scan.highest_severity
-    ? (SEVERITY_ICONS[scan.highest_severity]?.icon ?? HelpCircle)
-    : null;
-  const severityColor = scan.highest_severity
-    ? (SEVERITY_ICONS[scan.highest_severity]?.color ?? 'text-slate-400')
-    : 'text-slate-400';
+  const theme = getScoreTheme(score);
+  const normalizedScore = score !== undefined && score !== null ? Math.min(100, Math.max(0, score)) : 0;
+  const radius = 44;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - normalizedScore / 100);
 
   const duration = scan.duration_ms
     ? scan.duration_ms >= 1000
@@ -51,148 +64,188 @@ export default function ScoreCard({ scan }: Props) {
       : `${Math.round(scan.duration_ms)}ms`
     : null;
 
+  const rawCoverage = scan.assessment_coverage;
+  const hasCoverage = typeof rawCoverage === 'number' && Number.isFinite(rawCoverage);
+  const coveragePct = hasCoverage
+    ? Math.min(
+        100,
+        Math.max(0, rawCoverage > 1 ? Math.round(rawCoverage) : Math.round(rawCoverage * 100)),
+      )
+    : null;
+  const coverageText = coveragePct === null ? '—' : `${coveragePct}%`;
+
+  const passed = scan.passed_checks ?? 0;
+  const failed = scan.failed_checks ?? 0;
+  const warnings = scan.warning_checks ?? 0;
+  const inconclusive = scan.inconclusive_checks ?? 0;
+  const totalChecks = passed + failed + warnings + inconclusive;
+
+  const pointsPct = scan.assessed_points
+    ? Math.min(100, Math.max(0, Math.round(((scan.earned_points ?? 0) / scan.assessed_points) * 100)))
+    : 0;
+
+  const metrics = [
+    { label: 'Earned points', value: `${scan.earned_points?.toFixed(0) ?? 0}`, suffix: `/ ${scan.assessed_points?.toFixed(0) ?? 100}`, note: 'Weighted audit score', tone: 'text-ink' },
+    { label: 'Coverage', value: coverageText, suffix: '', note: 'Execution depth', tone: hasCoverage ? 'text-ink' : 'text-muted' },
+    { label: 'Passed', value: `${passed}`, suffix: `/ ${totalChecks || 1}`, note: 'Standards verified', tone: 'text-safe' },
+    { label: 'Failed', value: `${failed}`, suffix: 'flagged', note: 'Requires remediation', tone: failed > 0 ? 'text-critical' : 'text-muted' },
+  ];
+
   return (
-    <div className="glass-card p-6 sm:p-7 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden fade-in flex flex-col justify-between">
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-cyan-400 mb-1">
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Evidence-Based Evaluation
-          </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Security Assessment Score</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Earned <strong className="text-white font-mono">{scan.earned_points?.toFixed(0) ?? 0}</strong> of{' '}
-            <strong className="text-white font-mono">{scan.assessed_points?.toFixed(0) ?? 0}</strong> points
-          </p>
+    <section
+      role="region"
+      aria-label="Security assessment score summary"
+      className="aegis-panel flex flex-col"
+    >
+      <div className="aegis-panel-head">
+        <div className="min-w-0">
+          <p className="aegis-eyebrow">Posture / assessment</p>
+          <h2 className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink">
+            Security assessment score
+          </h2>
         </div>
-        {duration && (
-          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-800">
-            <Clock className="w-3.5 h-3.5 text-slate-500" />
-            {duration}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 my-2">
-        {/* Animated Score Ring */}
-        <div className="relative w-32 h-32 flex-shrink-0 flex items-center justify-center">
-          <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-            <circle
-              cx="50"
-              cy="50"
-              r="40"
-              fill="transparent"
-              stroke="#1e293b"
-              strokeWidth="8"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="40"
-              fill="transparent"
-              stroke={scoreColor}
-              strokeWidth="8"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="text-3xl font-black font-mono tracking-tight" style={{ color: scoreColor }}>
-              {score !== undefined && score !== null ? Math.round(score) : '—'}
-            </span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest -mt-0.5">
-              / 100
-            </span>
-          </div>
-        </div>
-
-        {/* 4 Stat Tiles */}
-        <div className="grid grid-cols-2 gap-2.5 flex-1 w-full">
-          <StatTile
-            icon={<CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-            label="Passed Checks"
-            value={scan.passed_checks}
-            valueClass="text-emerald-400"
-          />
-          <StatTile
-            icon={<XCircle className="w-4 h-4 text-red-400" />}
-            label="Failed Checks"
-            value={scan.failed_checks}
-            valueClass="text-red-400"
-          />
-          <StatTile
-            icon={<AlertTriangle className="w-4 h-4 text-amber-400" />}
-            label="Warnings"
-            value={scan.warning_checks}
-            valueClass="text-amber-400"
-          />
-          <StatTile
-            icon={<HelpCircle className="w-4 h-4 text-slate-500" />}
-            label="Inconclusive"
-            value={scan.inconclusive_checks}
-            valueClass="text-slate-400"
-          />
-        </div>
-      </div>
-
-      {/* Coverage Bar & Highest Severity */}
-      <div className="mt-6 pt-4 border-t border-slate-800/80 space-y-3">
-        <div>
-          <div className="flex justify-between text-xs mb-1.5 font-medium">
-            <span className="text-slate-400">Assessment Coverage Ratio</span>
-            <span className="text-white font-mono font-bold">
-              {scan.assessment_coverage?.toFixed(0) ?? 0}%
-            </span>
-          </div>
-          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-700"
-              style={{ width: `${scan.assessment_coverage ?? 0}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between text-xs pt-1">
-          <span className="text-slate-400 font-medium">Posture Status:</span>
-          <span className="font-bold text-white" style={{ color: scoreColor }}>
-            {scoreLabel}
+        {duration ? (
+          <span className="inline-flex shrink-0 items-center gap-1.5 border border-line px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+            <Clock className="h-3 w-3" aria-hidden="true" />
+            {duration} probe
           </span>
+        ) : null}
+      </div>
+
+      <div className="grid flex-1 gap-0 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="flex flex-col justify-between gap-5 border-b border-line p-5 sm:border-b-0 sm:border-r">
+          <div className="flex items-center gap-5">
+            <div
+              role="progressbar"
+              aria-valuenow={score !== null && score !== undefined ? Math.round(score) : 0}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Security score: ${score !== null && score !== undefined ? Math.round(score) : 'undetermined'} out of 100`}
+              className="relative h-[128px] w-[128px] shrink-0"
+            >
+              <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90">
+                <circle cx="50" cy="50" r={radius} fill="transparent" stroke="var(--color-line)" strokeWidth="4" />
+                <circle
+                  cx="50"
+                  cy="50"
+                  r={radius}
+                  fill="transparent"
+                  stroke={theme.ring}
+                  strokeWidth="4"
+                  strokeLinecap="butt"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={dashOffset}
+                  style={{ transition: 'stroke-dashoffset 700ms cubic-bezier(0.2,0.7,0.3,1)' }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="font-display text-[42px] font-semibold leading-none tracking-[-0.05em] tabular-nums text-ink">
+                  {score !== undefined && score !== null ? score.toFixed(0) : '—'}
+                </span>
+                <span className="mt-1 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">of 100</span>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <span
+                className="inline-flex items-center border px-2 py-1 font-mono text-[10.5px] font-medium uppercase tracking-[0.08em]"
+                style={{
+                  color: theme.color,
+                  borderColor: `color-mix(in srgb, ${theme.color} 32%, transparent)`,
+                  background: `color-mix(in srgb, ${theme.color} 8%, transparent)`,
+                }}
+              >
+                Grade {theme.grade}
+              </span>
+              <p className="mt-2.5 text-[13.5px] font-semibold leading-snug text-ink">{theme.label}</p>
+              {scan.highest_severity ? (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <span className="aegis-label !text-[9.5px]">Peak</span>
+                  <SeverityBadge severity={scan.highest_severity} size="xs" />
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
+              <span>Points realization</span>
+              <span className="tabular-nums text-ink">{pointsPct}%</span>
+            </div>
+            <div className="mt-2 h-[3px] w-full bg-line">
+              <div
+                className="h-full transition-[width] duration-700"
+                style={{ width: `${pointsPct}%`, backgroundColor: theme.color }}
+              />
+            </div>
+          </div>
         </div>
 
-        {scan.highest_severity && SeverityIcon && (
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400 font-medium">Worst Finding Severity:</span>
-            <span className={`flex items-center gap-1 font-bold capitalize ${severityColor}`}>
-              <SeverityIcon className="w-3.5 h-3.5" />
-              {scan.highest_severity}
-            </span>
-          </div>
-        )}
+        <dl className="grid grid-cols-2">
+          {metrics.map((metric, index) => (
+            <div
+              key={metric.label}
+              className={`px-4 py-4 ${index % 2 === 1 ? 'border-l border-line' : ''} ${index > 1 ? 'border-t border-line' : ''}`}
+            >
+              <dt className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">{metric.label}</dt>
+              <dd className="mt-2 flex items-baseline gap-1.5">
+                <span className={`font-display text-[26px] font-semibold leading-none tracking-[-0.04em] tabular-nums ${metric.tone}`}>
+                  {metric.value}
+                </span>
+                {metric.suffix ? <span className="font-mono text-[10px] text-muted">{metric.suffix}</span> : null}
+              </dd>
+              <dd className="mt-1.5 font-mono text-[10px] leading-tight text-muted">{metric.note}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
-    </div>
-  );
-}
 
-function StatTile({
-  icon,
-  label,
-  value,
-  valueClass,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  valueClass: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5 bg-slate-900/80 border border-slate-800/80 rounded-xl px-3 py-2.5">
-      <div className="flex-shrink-0">{icon}</div>
-      <div className="min-w-0">
-        <div className={`text-base font-extrabold font-mono leading-tight ${valueClass}`}>{value}</div>
-        <div className="text-[10px] text-slate-500 font-medium truncate">{label}</div>
+      <div className="border-t border-line px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="aegis-label !text-[9.5px]">Assessment checks</span>
+          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 font-mono text-[10px]">
+            <span className="flex items-center gap-1.5 text-safe">
+              <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+              {passed} pass
+            </span>
+            {failed > 0 ? (
+              <span className="flex items-center gap-1.5 text-critical">
+                <XCircle className="h-3 w-3" aria-hidden="true" />
+                {failed} fail
+              </span>
+            ) : null}
+            {warnings > 0 ? (
+              <span className="flex items-center gap-1.5 text-high">
+                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                {warnings} warn
+              </span>
+            ) : null}
+            {inconclusive > 0 ? (
+              <span className="flex items-center gap-1.5 text-muted">
+                <MinusCircle className="h-3 w-3" aria-hidden="true" />
+                {inconclusive} n/a
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-2.5 flex h-[3px] w-full overflow-hidden bg-line" aria-hidden="true">
+          {totalChecks > 0 ? (
+            <>
+              <div style={{ width: `${(passed / totalChecks) * 100}%` }} className="h-full bg-safe" />
+              <div style={{ width: `${(failed / totalChecks) * 100}%` }} className="h-full bg-critical" />
+              <div style={{ width: `${(warnings / totalChecks) * 100}%` }} className="h-full bg-high" />
+              <div style={{ width: `${(inconclusive / totalChecks) * 100}%` }} className="h-full bg-line-strong" />
+            </>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+          <span>Score = weighted strength</span>
+          <span>Coverage = validated depth {coverageText}</span>
+          <span>Deterministic · no inference</span>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

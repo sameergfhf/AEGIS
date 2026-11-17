@@ -3,16 +3,18 @@ app/services/scan_service.py — Orchestrates the full scan pipeline.
 """
 from __future__ import annotations
 
-import asyncio
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+
+from app.database import AsyncSessionLocal
+from sqlalchemy import delete, select
 
 from app.config import get_settings
 from app.models.scan import Scan
@@ -22,6 +24,7 @@ from app.schemas import TestResult
 from app.security.redaction import redact_headers, redact_value
 from app.security.url_validation import resolve_and_validate, validate_redirect_destination, URLValidationError
 from app.services.scoring import calculate_score
+from app.services.api_category_service import classify_api_from_result_json
 from app.services.visualization_service import (
     collect_latency_samples,
     build_flow_graph,
@@ -29,6 +32,31 @@ from app.services.visualization_service import (
 )
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+async def _sync_failed_workspace_scan(scan: Scan) -> None:
+    if not scan.user_id:
+        return
+    try:
+        from app.services.supabase_sync import sync_scan_to_supabase
+        synced = await sync_scan_to_supabase(
+            scan_id=scan.id, target_url=scan.url, hostname=scan.hostname, status="failed",
+            score=scan.assessment_score, duration_ms=scan.duration_ms,
+            passed_checks=scan.passed_checks or 0, failed_checks=scan.failed_checks or 0,
+            warning_checks=scan.warning_checks or 0, inconclusive_checks=scan.inconclusive_checks or 0,
+            highest_severity=scan.highest_severity, user_id=scan.user_id, user_email=scan.user_email,
+            workspace_id=scan.workspace_id, findings=[], started_at=scan.started_at.isoformat() if scan.started_at else None,
+            completed_at=scan.completed_at.isoformat() if scan.completed_at else None, result_json=scan.result_json)
+        if not synced:
+            logger.error("Canonical Supabase persistence did not complete for failed scan %s", scan.id)
+    except Exception as exc:
+        logger.exception("Canonical Supabase persistence could not run for failed scan %s: %s", scan.id, exc)
+    try:
+        from app.services.governance_automation import notify_scan_failure
+        await notify_scan_failure(scan.workspace_id, scan.user_id, scan.id)
+    except Exception as exc:
+        logger.warning("Failed scan notification path failed for scan %s: %s", scan.id, exc)
 
 
 async def run_scan(
@@ -70,6 +98,8 @@ async def run_scan(
         scan = result.scalar_one_or_none()
         if not scan:
             return
+        # Recovery retries reuse the scan ID; remove any prior finding rows first.
+        await db.execute(delete(Finding).where(Finding.scan_id == scan_id))
         scan.status = "running"
 
     # ── Step 1: Validate URL ────────────────────────────────────────────────
@@ -86,6 +116,8 @@ async def run_scan(
                 scan.error_message = f"URL validation failed: {exc}"
                 scan.completed_at = datetime.now(timezone.utc)
                 scan.duration_ms = (time.monotonic() - started) * 1000
+        if scan:
+            await _sync_failed_workspace_scan(scan)
         return
 
     # ── Step 2: Primary HTTP request ────────────────────────────────────────
@@ -95,6 +127,7 @@ async def run_scan(
     response_status = None
     response_content_type = ""
     primary_response: Optional[httpx.Response] = None
+    response_for_headers: Optional[httpx.Response] = None
 
     method = http_method.upper()
     scan_events.append({"stage": "request", "url": url, "method": method})
@@ -128,37 +161,49 @@ async def run_scan(
             response_headers = dict(primary_response.headers)
             response_content_type = primary_response.headers.get("content-type", "")
 
-            # Handle redirects manually
+            # Handle redirects manually so every destination is validated before use.
             current_response = primary_response
+            current_url = str(primary_response.url)
             hops = 0
             while current_response.is_redirect and hops < settings.max_redirects:
                 location = current_response.headers.get("location", "")
                 if not location:
                     break
-                # Make absolute if relative
-                if location.startswith("/"):
-                    parsed = urlparse(url)
-                    location = f"{parsed.scheme}://{parsed.netloc}{location}"
+
+                # Resolve both root-relative and path-relative Location values correctly.
+                redirect_url = urljoin(current_url, location)
                 try:
-                    validate_redirect_destination(location)
+                    validate_redirect_destination(redirect_url)
                 except URLValidationError:
-                    scan_events.append({"stage": "redirect_blocked", "destination": location})
+                    scan_events.append({"stage": "redirect_blocked", "destination": redirect_url})
                     break
-                redirect_destinations.append(location)
-                # Follow redirect with GET regardless of original method (standard behaviour)
-                current_response = await client.request(
-                    "GET", location, headers=extra_headers or None
+
+                redirect_destinations.append(redirect_url)
+
+                # Do not forward credentials to a different origin. Redirects are
+                # intentionally followed with GET, matching the existing scanner behavior.
+                source = urlparse(current_url)
+                destination = urlparse(redirect_url)
+                same_origin = (
+                    source.scheme.lower() == destination.scheme.lower()
+                    and source.hostname == destination.hostname
+                    and source.port == destination.port
                 )
+                redirect_headers = extra_headers if same_origin else {}
+
+                current_response = await client.request(
+                    "GET", redirect_url, headers=redirect_headers or None
+                )
+                current_url = redirect_url
                 hops += 1
 
-            if redirect_destinations:
-                final_response = current_response
-                response_status = final_response.status_code
-                response_headers = dict(final_response.headers)
-                response_content_type = final_response.headers.get("content-type", "")
-                body_bytes = await final_response.aread()
-            else:
-                body_bytes = await primary_response.aread()
+            # Keep the exact response used for body/header analysis. This is the
+            # final response reached, or the last response if a redirect was blocked.
+            response_for_headers = current_response
+            response_status = current_response.status_code
+            response_headers = dict(current_response.headers)
+            response_content_type = current_response.headers.get("content-type", "")
+            body_bytes = await current_response.aread()
 
             # Enforce response size limit
             body_bytes = body_bytes[: settings.max_response_bytes]
@@ -182,6 +227,8 @@ async def run_scan(
                 scan.error_message = "Request timed out"
                 scan.completed_at = datetime.now(timezone.utc)
                 scan.duration_ms = (time.monotonic() - started) * 1000
+        if scan:
+            await _sync_failed_workspace_scan(scan)
         return
     except Exception as exc:
         scan_events.append({"stage": "request_error", "error": str(exc)[:500]})
@@ -193,12 +240,18 @@ async def run_scan(
                 scan.error_message = str(exc)[:500]
                 scan.completed_at = datetime.now(timezone.utc)
                 scan.duration_ms = (time.monotonic() - started) * 1000
+        if scan:
+            await _sync_failed_workspace_scan(scan)
         return
 
     # ── Step 3: Run security modules concurrently ───────────────────────────
     # TLS checker is synchronous (uses stdlib ssl)
     tls_result = await tls_checker.run(url)
-    headers_result = await headers_checker.run(primary_response if primary_response else _dummy_response(response_headers))
+    headers_result = await headers_checker.run(
+        response_for_headers
+        if response_for_headers is not None
+        else _dummy_response(response_headers)
+    )
     leakage_result = await leakage_checker.run(response_body, response_content_type)
     reputation_result = await reputation_checker.run(url, redirect_destinations)
 
@@ -248,6 +301,7 @@ async def run_scan(
             "headers": redact_headers(response_headers),
             "content_type": response_content_type,
             "redirect_destinations": redirect_destinations,
+            "body": response_body,
         },
         "test_results": {k: v.model_dump() for k, v in test_results.items()},
         "score": score_result.model_dump(),
@@ -261,6 +315,25 @@ async def run_scan(
     # Embed operation context if this scan originated from the Spec Analyzer
     if operation_context:
         result_payload["operation_context"] = operation_context
+
+    # ── Step 8b: API Category Identification ────────────────────────────────
+    try:
+        cat_result = classify_api_from_result_json(
+            url,
+            result_json_dict=result_payload,
+        )
+        result_payload["api_category"] = {
+            "category": cat_result.category,
+            "confidence": cat_result.confidence,
+            "reason": cat_result.reason,
+            "detection_method": cat_result.detection_method,
+            "requires_user_confirmation": cat_result.requires_user_confirmation,
+            "matched_signals": cat_result.matched_signals,
+            "user_category": None,
+        }
+    except Exception as _cat_exc:
+        logger.warning("API category classification failed: %s", _cat_exc)
+        result_payload["api_category"] = None
 
     # ── Step 9: Persist findings ─────────────────────────────────────────────
     db_findings = []
@@ -308,52 +381,61 @@ async def run_scan(
         for finding in db_findings:
             db.add(finding)
 
-    # ── Step 11: Sync to Supabase Database & Storage ─────────────────────────
-    try:
-        from app.services.supabase_sync import sync_scan_to_supabase
-        findings_dicts = [
-            {
-                "id": f.id,
-                "title": f.title,
-                "category": f.category,
-                "severity": f.severity,
-                "confidence": f.confidence,
-                "status": f.status,
-                "evidence": f.evidence,
-                "description": f.description,
-                "why_it_matters": f.why_it_matters,
-                "remediation": f.remediation,
-                "rule_reference": f.rule_reference,
-            }
-            for f in db_findings
-        ]
-        import asyncio
-        asyncio.create_task(sync_scan_to_supabase(
-            scan_id=scan.id,
-            target_url=scan.url,
-            hostname=scan.hostname,
-            status=scan.status,
-            score=scan.assessment_score,
-            duration_ms=scan.duration_ms,
-            passed_checks=scan.passed_checks,
-            failed_checks=scan.failed_checks,
-            warning_checks=scan.warning_checks,
-            inconclusive_checks=scan.inconclusive_checks,
-            highest_severity=scan.highest_severity,
-            user_id=scan.user_id,
-            user_email=scan.user_email,
-            findings=findings_dicts,
-            visualizations=result_payload.get("visualizations"),
-            started_at=scan.started_at.isoformat() if scan.started_at else None,
-            completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
-            result_json=scan.result_json,
-        ))
-    except Exception as exc:
-        logger.error("Failed to trigger Supabase sync: %s", exc)
+    # ── Step 11: Workspace governance processing ─────────────────────────────
+    findings_dicts = [{
+        "id": finding.id, "title": finding.title, "category": finding.category,
+        "severity": finding.severity, "confidence": finding.confidence, "status": finding.status,
+        "evidence": finding.evidence, "description": finding.description,
+        "why_it_matters": finding.why_it_matters, "remediation": finding.remediation,
+        "rule_reference": finding.rule_reference,
+    } for finding in db_findings]
+    if scan.user_id:
+        try:
+            from app.services.supabase_sync import sync_scan_to_supabase
+            synced = await sync_scan_to_supabase(
+                scan_id=scan.id, target_url=scan.url, hostname=scan.hostname, status=scan.status,
+                score=scan.assessment_score, duration_ms=scan.duration_ms,
+                passed_checks=scan.passed_checks, failed_checks=scan.failed_checks,
+                warning_checks=scan.warning_checks, inconclusive_checks=scan.inconclusive_checks,
+                highest_severity=scan.highest_severity, user_id=scan.user_id, user_email=scan.user_email,
+                workspace_id=scan.workspace_id, findings=findings_dicts,
+                visualizations=result_payload.get("visualizations"),
+                started_at=scan.started_at.isoformat() if scan.started_at else None,
+                completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
+                result_json=scan.result_json, earned_points=scan.earned_points,
+                assessed_points=scan.assessed_points, assessment_coverage=scan.assessment_coverage,
+                scan_type="operation" if operation_context else "full")
+            if not synced:
+                logger.error("Canonical Supabase persistence did not complete for scan %s", scan.id)
+        except Exception as exc:
+            logger.exception("Canonical Supabase persistence could not run for scan %s: %s", scan.id, exc)
+    if scan.workspace_id:
+        try:
+            from app.services.governance_automation import process_workspace_scan
+            await process_workspace_scan(
+                {"id": scan.id, "workspace_id": scan.workspace_id, "user_id": scan.user_id,
+                 "url": scan.url, "target_url": scan.url, "score": scan.assessment_score,
+                 "result_json": scan.result_json}, findings_dicts,
+            )
+        except Exception as exc:
+            logger.exception("Workspace scan governance processing failed for %s: %s", scan.id, exc)
 
 
-class _dummy_response:
-    """Minimal mock for headers_checker when primary_response is unavailable."""
-    def __init__(self, headers: Dict[str, str]):
-        self.headers = headers
-        self.status_code = 0
+async def run_scan_in_new_session(
+    scan_id: str, url: str, **kwargs: Any
+) -> None:
+    """Run a scan in a session owned by the worker, never the HTTP request."""
+    async with AsyncSessionLocal() as db:
+        try:
+            await run_scan(scan_id, url, db, **kwargs)
+        except Exception as exc:
+            logger.exception("Manual scan execution failed for %s", scan_id)
+            await db.rollback()
+            result = await db.execute(select(Scan).where(Scan.id == scan_id))
+            scan = result.scalar_one_or_none()
+            if scan:
+                scan.status = "failed"
+                scan.error_message = f"Scan execution failed: {type(exc).__name__}"[:2000]
+                scan.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                await _sync_failed_workspace_scan(scan)

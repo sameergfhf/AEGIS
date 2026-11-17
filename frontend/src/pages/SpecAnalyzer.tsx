@@ -1,40 +1,31 @@
-// src/pages/SpecAnalyzer.tsx — OpenAPI & Swagger 3.0 Deep Specification Analyzer
-import { useState, useRef, useEffect } from 'react';
+// src/pages/SpecAnalyzer.tsx — OpenAPI & Swagger specification analyzer
+import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   FileCode2,
   FlaskConical,
   Globe,
-  Loader2,
   Lock,
   Search,
   Upload,
   Zap,
-  ChevronDown,
   ChevronRight,
   Layers,
   X,
 } from 'lucide-react';
 import { analyzeSpecUrl, analyzeSpecFile } from '../services/api';
-import { fetchSpecUploadsFromSupabase } from '../services/supabaseService';
+import { downloadFromStorage, fetchSpecUploadsFromSupabase } from '../services/supabaseService';
 import type { SpecAnalysis, EndpointInfo } from '../types';
 import type { OperationScanLocationState } from './OperationScan';
+import { Button, MethodBadge, Badge } from '../components/ui';
 import toast from 'react-hot-toast';
 
-const METHOD_COLORS: Record<string, string> = {
-  GET:     'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
-  POST:    'text-blue-400 bg-blue-500/10 border-blue-500/30',
-  PUT:     'text-amber-400 bg-amber-500/10 border-amber-500/30',
-  PATCH:   'text-orange-400 bg-orange-500/10 border-orange-500/30',
-  DELETE:  'text-rose-400 bg-rose-500/10 border-rose-500/30',
-  HEAD:    'text-slate-400 bg-slate-700/40 border-slate-600/30',
-  OPTIONS: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
-};
-
-// Quick sample OpenAPI specs
 const SAMPLE_SPECS = [
-  { label: 'Local API Sentinel Spec', url: 'http://localhost:8000/openapi.json' },
+  {
+    label: 'OpenAPI Petstore v3',
+    url: 'https://raw.githubusercontent.com/OAI/OpenAPI-Specification/main/examples/v3.0/petstore.json',
+  },
   { label: 'Swagger Petstore v2', url: 'https://petstore.swagger.io/v2/swagger.json' },
 ];
 
@@ -46,108 +37,138 @@ function EndpointRow({
   onTestInDashboard: (ep: EndpointInfo) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const methodColor = METHOD_COLORS[endpoint.method] ?? 'text-slate-400 bg-slate-700/40 border-slate-600/30';
+  const slug = `${endpoint.method}-${endpoint.path.replace(/\W/g, '-')}`;
 
   return (
-    <div className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-850/40 transition-colors">
-      <div className="flex items-center gap-3 px-4 py-3.5">
+    <li className="border-b border-line last:border-b-0">
+      <div className="flex flex-col justify-between gap-2.5 px-3.5 py-3 transition-colors hover:bg-canvas sm:flex-row sm:items-center sm:px-4">
         <button
-          className="flex items-center gap-3 flex-1 text-left min-w-0 cursor-pointer"
+          type="button"
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] sm:gap-3"
+          aria-expanded={expanded}
+          aria-controls={`endpoint-details-${slug}`}
           onClick={() => setExpanded(!expanded)}
         >
-          <span className={`text-[11px] font-mono font-extrabold px-2.5 py-0.5 rounded-md border flex-shrink-0 w-16 text-center ${methodColor}`}>
-            {endpoint.method}
-          </span>
-          <code className="text-white text-xs font-mono font-semibold flex-1 truncate">{endpoint.path}</code>
+          <MethodBadge method={endpoint.method} size="sm" className="w-16 shrink-0" />
+          <code className="min-w-0 flex-1 truncate font-mono text-[11.5px] font-medium text-ink sm:text-[12.5px]">
+            {endpoint.path}
+          </code>
 
-          {endpoint.deprecated && (
-            <span className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
-              deprecated
+          {endpoint.deprecated ? (
+            <Badge variant="amber" size="xs" className="shrink-0">
+              Deprecated
+            </Badge>
+          ) : null}
+
+          {endpoint.auth_schemes.length > 0 ? (
+            <span className="hidden shrink-0 items-center gap-1 border border-line bg-elevated px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-muted sm:flex">
+              <Lock className="h-3 w-3" aria-hidden="true" />
+              {endpoint.auth_schemes.join(', ')}
             </span>
-          )}
+          ) : null}
 
-          {endpoint.auth_schemes.length > 0 && (
-            <div className="flex items-center gap-1 text-[10px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full flex-shrink-0">
-              <Lock className="w-3 h-3" />
-              <span>{endpoint.auth_schemes.join(', ')}</span>
-            </div>
-          )}
+          {endpoint.summary ? (
+            <span className="hidden max-w-xs truncate text-[11px] text-muted lg:block xl:max-w-sm">
+              {endpoint.summary}
+            </span>
+          ) : null}
 
-          {endpoint.summary && (
-            <span className="text-xs text-slate-400 hidden lg:block truncate max-w-sm">{endpoint.summary}</span>
-          )}
-
-          <div className="text-slate-500 hover:text-slate-300 ml-2">
-            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </div>
+          <ChevronRight
+            className={`ml-auto h-4 w-4 shrink-0 text-muted transition-transform duration-200 ${
+              expanded ? 'rotate-90' : ''
+            }`}
+            aria-hidden="true"
+          />
         </button>
 
-        {/* Test CTA */}
-        <button
-          id={`test-btn-${endpoint.method}-${endpoint.path.replace(/\W/g, '-')}`}
+        <Button
+          id={`test-btn-${slug}`}
+          variant="secondary"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             onTestInDashboard(endpoint);
           }}
-          title="Run targeted security scan against this endpoint"
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border
-            border-cyan-500/30 bg-cyan-500/10 text-cyan-300 font-semibold
-            hover:bg-cyan-500/20 hover:border-cyan-500/60 hover:text-cyan-200
-            transition-all flex-shrink-0 whitespace-nowrap cursor-pointer shadow-sm shadow-cyan-500/10"
+          leftIcon={<FlaskConical className="h-3.5 w-3.5" />}
+          className="w-full shrink-0 sm:w-auto"
         >
-          <FlaskConical className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Test Endpoint</span>
-        </button>
+          Test endpoint
+        </Button>
       </div>
 
-      {expanded && (
-        <div className="px-5 py-4 text-xs space-y-4 bg-slate-900/60 border-t border-slate-800/80 fade-in">
-          {endpoint.description && (
+      {expanded ? (
+        <div
+          id={`endpoint-details-${slug}`}
+          role="region"
+          aria-label={`${endpoint.method} ${endpoint.path} specification details`}
+          className="aegis-reveal space-y-4 border-t border-line bg-canvas px-3.5 py-4 sm:px-4"
+        >
+          {endpoint.description ? (
             <div>
-              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-1">Description</p>
-              <p className="text-slate-300 leading-relaxed font-sans">{endpoint.description}</p>
+              <p className="aegis-label mb-1">Description</p>
+              <p className="text-[11.5px] leading-relaxed text-muted">{endpoint.description}</p>
             </div>
-          )}
+          ) : null}
+
+          {endpoint.auth_schemes.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-1.5 sm:hidden">
+              <span className="aegis-label">Auth</span>
+              <span className="inline-flex items-center gap-1 border border-line bg-paper px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-muted">
+                <Lock className="h-3 w-3" aria-hidden="true" />
+                {endpoint.auth_schemes.join(', ')}
+              </span>
+            </div>
+          ) : null}
 
           {endpoint.parameters.length > 0 ? (
             <div>
-              <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider mb-2">
-                Declared Parameters ({endpoint.parameters.length})
+              <p className="aegis-label mb-2">
+                Declared parameters
+                <span className="ml-1.5 normal-case tracking-normal text-muted">
+                  ({endpoint.parameters.length})
+                </span>
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-px bg-line sm:grid-cols-2 lg:grid-cols-3">
                 {endpoint.parameters.map((p, idx) => (
-                  <div key={idx} className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 font-mono text-[11px]">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-cyan-300">{String(p.name ?? 'param')}</span>
-                      <span className="text-[10px] text-slate-500 uppercase">{String(p.in ?? '')}</span>
+                  <div key={idx} className="bg-paper px-2.5 py-2 font-mono text-[10.5px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-medium text-forest">
+                        {String(p.name ?? 'param')}
+                      </span>
+                      <span className="shrink-0 text-[9px] uppercase tracking-[0.06em] text-muted">
+                        {String(p.in ?? '')}
+                      </span>
                     </div>
-                    {Boolean(p.required) && (
-                      <span className="text-[9px] text-amber-400 font-bold uppercase mt-1 block">
+                    {p.required ? (
+                      <span className="mt-1 block text-[9px] uppercase tracking-[0.06em] text-high">
                         Required
                       </span>
-                    )}
+                    ) : null}
                   </div>
                 ))}
               </div>
             </div>
           ) : (
-            <p className="text-[11px] text-slate-500 italic">No parameters required for this operation.</p>
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-muted">
+              No parameters required for this operation.
+            </p>
           )}
 
-          <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
-            <span className="text-[11px] text-slate-500">
-              Ready to execute observational checks against this operation?
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+            <span className="text-[11px] text-muted">
+              Ready to run observational checks against this operation?
             </span>
             <button
+              type="button"
               onClick={() => onTestInDashboard(endpoint)}
-              className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 font-semibold cursor-pointer"
+              className="flex min-h-9 items-center gap-1.5 px-1 font-mono text-[9.5px] uppercase tracking-[0.06em] text-forest transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
             >
-              Configure and dispatch audit →
+              Configure &amp; dispatch audit &rarr;
             </button>
           </div>
         </div>
-      )}
-    </div>
+      ) : null}
+    </li>
   );
 }
 
@@ -226,6 +247,48 @@ export default function SpecAnalyzer() {
     }
   };
 
+  const openSavedSpec = async (saved: any) => {
+    if (typeof saved.spec_url === 'string' && saved.spec_url.startsWith('storage://')) {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const objectPath = saved.spec_url.slice('storage://'.length);
+        const text = typeof saved.content === 'string' && saved.content.length >= 50_000
+          ? await downloadFromStorage(objectPath)
+          : (saved.content || await downloadFromStorage(objectPath));
+        if (!text) throw new Error('The private saved specification could not be loaded. Check that you still have access to its account.');
+        const file = new File([text], saved.filename || 'openapi.json', { type: 'application/json' });
+        setActiveTab('file');
+        setAnalysis(await analyzeSpecFile(file));
+        toast.success(`Loaded ${saved.filename || 'saved specification'}`);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : 'Could not load the saved specification.';
+        setError(message);
+        toast.error(message);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    if (saved.spec_url) {
+      setActiveTab('url');
+      setUrl(saved.spec_url);
+      return;
+    }
+    if (saved.metadata) {
+      setAnalysis({
+        spec_id: saved.id,
+        title: saved.metadata.title || saved.filename,
+        version: saved.version || '3.0.0',
+        endpoints: saved.metadata.endpoints || [],
+        total_endpoints: saved.endpoints || 0,
+        deprecated_count: 0,
+        auth_schemes: [],
+        base_url: '',
+      });
+    }
+  };
+
   const handleTestInDashboard = (endpoint: EndpointInfo) => {
     if (!analysis) return;
     const rawBaseUrl = analysis.base_url ?? '';
@@ -252,267 +315,313 @@ export default function SpecAnalyzer() {
   });
 
   return (
-    <div className="min-h-screen px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-8">
-      {/* ── Page Header ──────────────────────────────────────────────────────── */}
-      <div className="border-b border-slate-800/80 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Schema Inspection</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-xs text-slate-400">OpenAPI 3.0 / Swagger 2.0</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-            <FileCode2 className="w-6 h-6 text-cyan-400" />
-            API Specification Analyzer
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Ingest API schemas to discover routes, audit parameter declarations, and execute 1-click single-endpoint scans.
+    <div className="aegis-container pb-16 pt-6 page-spec">
+      <header className="aegis-page-header">
+        <div className="min-w-0">
+          <p className="aegis-eyebrow">Schema / inspection · OpenAPI 3.x · Swagger 2.0</p>
+          <h1 className="aegis-page-title">Specification analyzer</h1>
+          <p className="aegis-lede mt-3">
+            Ingest a schema to enumerate routes, audit parameter declarations, and dispatch a
+            single-operation probe without leaving the ledger.
           </p>
         </div>
 
-        {analysis && (
-          <button
+        {analysis ? (
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setAnalysis(null)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 text-xs font-semibold hover:border-slate-600 hover:text-white transition-all self-start sm:self-auto cursor-pointer"
+            leftIcon={<X className="h-3.5 w-3.5" />}
+            className="w-full sm:w-auto"
           >
-            <X className="w-3.5 h-3.5" />
-            Clear Analysis
-          </button>
-        )}
-      </div>
+            Clear analysis
+          </Button>
+        ) : null}
+      </header>
 
-      {/* ── Schema Ingestion Card ────────────────────────────────────────────── */}
-      <div className="glass-card border border-slate-700/80 rounded-2xl p-6 sm:p-8 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-              Load API Specification
+      <section aria-labelledby="ingest-heading" className="aegis-panel mt-6">
+        <div className="aegis-panel-head">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Layers className="h-4 w-4 text-forest" aria-hidden="true" />
+            <h2
+              id="ingest-heading"
+              className="font-display text-[14px] font-semibold tracking-tight text-ink"
+            >
+              Load specification
             </h2>
           </div>
 
-          {/* Ingestion Mode Tabs */}
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs">
+          <div role="group" aria-label="Specification source" className="flex border border-line-strong">
             <button
+              type="button"
+              aria-pressed={activeTab === 'url'}
               onClick={() => setActiveTab('url')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                activeTab === 'url' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
+              className={`flex min-h-9 items-center px-2.5 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
+                activeTab === 'url' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
               }`}
             >
               Remote URL
             </button>
             <button
+              type="button"
+              aria-pressed={activeTab === 'file'}
               onClick={() => setActiveTab('file')}
-              className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                activeTab === 'file' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'text-slate-400 hover:text-white'
+              className={`flex min-h-9 items-center border-l border-line-strong px-2.5 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
+                activeTab === 'file' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
               }`}
             >
-              Upload File
+              Upload file
             </button>
           </div>
         </div>
 
-        {activeTab === 'url' ? (
-          <form onSubmit={handleUrlAnalyze} className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="relative flex-1">
-                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  id="spec-url-input"
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://api.example.com/openapi.json"
-                  className="w-full bg-slate-900/90 border border-slate-700/80 text-white text-xs sm:text-sm pl-10 pr-4 py-3 rounded-xl outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/30 placeholder-slate-500 font-mono transition-all"
-                  disabled={isLoading}
-                />
-              </div>
-              <button
-                type="submit"
-                id="analyze-spec-btn"
-                disabled={!url.trim() || isLoading}
-                className="flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-md shadow-cyan-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex-shrink-0"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Parsing Spec…</span>
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-4 h-4" />
-                    <span>Analyze Schema</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Sample URLs */}
-            <div className="flex flex-wrap items-center gap-2 text-xs pt-1">
-              <span className="text-slate-500 font-medium mr-1 flex items-center gap-1">
-                <Zap className="w-3 h-3 text-cyan-400" /> Quick Samples:
-              </span>
-              {SAMPLE_SPECS.map((sample) => (
-                <button
-                  key={sample.url}
-                  type="button"
-                  onClick={() => setUrl(sample.url)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-850 hover:bg-slate-800 border border-slate-700/60 text-slate-300 hover:text-white transition-all font-mono text-[11px] cursor-pointer"
+        <div className="p-4 sm:p-5">
+          {activeTab === 'url' ? (
+            <form onSubmit={handleUrlAnalyze} className="space-y-4">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="aegis-input-shell min-w-0 flex-1 gap-3 px-3.5">
+                  <Globe className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                  <label htmlFor="spec-url-input" className="sr-only">
+                    Specification URL
+                  </label>
+                  <input
+                    id="spec-url-input"
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://api.example.com/openapi.json"
+                    className="min-h-12 w-full bg-transparent font-mono text-[12.5px] text-ink outline-none placeholder:text-muted"
+                    disabled={isLoading}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  id="analyze-spec-btn"
+                  variant="primary"
+                  size="md"
+                  disabled={!url.trim() || isLoading}
+                  isLoading={isLoading}
+                  leftIcon={<Search className="h-4 w-4" />}
+                  className="w-full shrink-0 justify-center sm:w-auto"
                 >
-                  {sample.label}
-                </button>
-              ))}
+                  Analyze schema
+                </Button>
+              </div>
 
-              {savedSpecs.length > 0 && (
-                <>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-cyan-400 font-medium flex items-center gap-1">
-                    <FileCode2 className="w-3 h-3" /> Supabase Vault ({savedSpecs.length}):
-                  </span>
-                  {savedSpecs.slice(0, 3).map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        if (s.spec_url) setUrl(s.spec_url);
-                        else if (s.metadata) setAnalysis({
-                          spec_id: s.id,
-                          title: s.metadata.title || s.filename,
-                          version: s.version || '3.0.0',
-                          endpoints: s.metadata.endpoints || [],
-                          total_endpoints: s.endpoints || 0,
-                          deprecated_count: 0,
-                          auth_schemes: [],
-                          base_url: s.spec_url || '',
-                        });
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-800/50 text-cyan-200 hover:text-white transition-all font-mono text-[11px] cursor-pointer flex items-center gap-1"
-                    >
-                      <span>{s.filename}</span>
-                      <span className="text-[9px] text-cyan-400">({s.endpoints} ep)</span>
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
-          </form>
-        ) : (
-          <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-700 hover:border-cyan-500/50 rounded-2xl p-8 transition-colors bg-slate-900/40 text-center">
-            <Upload className="w-8 h-8 text-cyan-400 mb-3" />
-            <h3 className="text-sm font-semibold text-white mb-1">Upload OpenAPI JSON or YAML</h3>
-            <p className="text-xs text-slate-500 mb-4 max-w-sm">
-              Supports Swagger 2.0, OpenAPI 3.0.x, and 3.1.x schemas up to 2 MB.
-            </p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className="px-5 py-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-semibold hover:bg-cyan-500/20 transition-all cursor-pointer"
-            >
-              Choose Schema File
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,.yaml,.yml"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-          </div>
-        )}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3">
+                <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-muted">
+                  <Zap className="h-3 w-3 text-forest" aria-hidden="true" />
+                  Samples
+                </span>
+                {SAMPLE_SPECS.map((sample) => (
+                  <button
+                    key={sample.url}
+                    type="button"
+                    onClick={() => setUrl(sample.url)}
+                    className="flex min-h-9 items-center border border-line bg-canvas px-2 font-mono text-[10px] text-muted transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                  >
+                    {sample.label}
+                  </button>
+                ))}
 
-        {error && (
-          <div className="mt-4 flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-      </div>
-
-      {/* ── Analyzed Specification Results ───────────────────────────────────── */}
-      {analysis && (
-        <div className="space-y-6 fade-in">
-          {/* Metadata KPI grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="glass-card p-4 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">API Title</span>
-              <p className="text-sm font-bold text-white truncate mt-1">{analysis.title ?? 'Untitled API'}</p>
-            </div>
-            <div className="glass-card p-4 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Spec Version</span>
-              <p className="text-sm font-mono font-bold text-cyan-400 mt-1">{analysis.version ?? '1.0.0'}</p>
-            </div>
-            <div className="glass-card p-4 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Base Server URL</span>
-              <p className="text-sm font-mono text-slate-300 truncate mt-1">{analysis.base_url || '/'}</p>
-            </div>
-            <div className="glass-card p-4 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Operations</span>
-              <p className="text-sm font-mono font-extrabold text-emerald-400 mt-1">{analysis.total_endpoints}</p>
-            </div>
-          </div>
-
-          {/* Filter Bar & Method Chips */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                {savedSpecs.length > 0 ? (
+                  <>
+                    <span className="hidden h-4 w-px bg-line sm:block" aria-hidden="true" />
+                    <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.1em] text-forest">
+                      <FileCode2 className="h-3 w-3" aria-hidden="true" />
+                      Vault <span className="tabular-nums">({savedSpecs.length})</span>
+                    </span>
+                    {savedSpecs.slice(0, 3).map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => void openSavedSpec(s)}
+                        className="flex min-h-9 items-center gap-1 border border-forest/25 bg-forest/8 px-2 font-mono text-[10px] text-forest transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                      >
+                        <span className="max-w-[160px] truncate">{s.filename}</span>
+                        <span className="tabular-nums text-[9px]">
+                          {s.endpoints} ep
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                ) : null}
+              </div>
+            </form>
+          ) : (
+            <div className="flex flex-col items-center justify-center border border-dashed border-line-strong bg-canvas px-6 py-10 text-center">
+              <Upload className="h-6 w-6 text-forest" aria-hidden="true" />
+              <h3 className="mt-2.5 font-display text-[14px] font-semibold text-ink">
+                Upload OpenAPI JSON or YAML
+              </h3>
+              <p className="mt-1 max-w-sm text-[11.5px] leading-relaxed text-muted">
+                Supports Swagger 2.0, OpenAPI 3.0.x, and 3.1.x schemas up to 2 MB.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="mt-4"
+              >
+                Choose schema file
+              </Button>
               <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,.yaml,.yml"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
+          )}
+
+          {error ? (
+            <div
+              role="alert"
+              className="mt-4 flex items-start gap-2 border border-critical/30 bg-critical/8 px-3 py-2.5 text-[11.5px] text-critical"
+            >
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{error}</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      {analysis ? (
+        <div className="aegis-reveal mt-6 space-y-4">
+          <dl className="grid grid-cols-2 gap-px bg-line lg:grid-cols-4">
+            <div className="bg-paper px-4 py-3">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                API title
+              </dt>
+              <dd className="mt-1 truncate text-[12.5px] font-semibold text-ink" title={analysis.title}>
+                {analysis.title ?? 'Untitled API'}
+              </dd>
+            </div>
+            <div className="bg-paper px-4 py-3">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Spec version
+              </dt>
+              <dd className="mt-1 font-mono text-[12.5px] font-semibold text-forest">
+                {analysis.version ?? '1.0.0'}
+              </dd>
+            </div>
+            <div className="bg-paper px-4 py-3">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Base server
+              </dt>
+              <dd
+                className="mt-1 truncate font-mono text-[11px] text-muted"
+                title={analysis.base_url || '/'}
+              >
+                {analysis.base_url || '/'}
+              </dd>
+            </div>
+            <div className="bg-paper px-4 py-3">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Operations
+              </dt>
+              <dd className="mt-1 font-mono text-[12.5px] font-semibold tabular-nums text-ink">
+                {analysis.total_endpoints}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="flex flex-col justify-between gap-2.5 md:flex-row md:items-center">
+            <div className="aegis-input-shell max-w-md flex-1 gap-2.5 px-3">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+              <label htmlFor="endpoint-search" className="sr-only">
+                Search endpoints by path or summary
+              </label>
+              <input
+                id="endpoint-search"
                 type="text"
                 placeholder="Search endpoints by path or summary…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 text-white text-xs sm:text-sm pl-9 pr-4 py-2 rounded-xl outline-none focus:border-cyan-500/50 placeholder-slate-500 font-mono"
+                className="min-h-10 w-full bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-muted"
               />
             </div>
 
-            {/* Method Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <div
+              role="group"
+              aria-label="Filter endpoints by method"
+              className="flex flex-wrap items-center gap-1"
+            >
               <button
+                type="button"
+                aria-pressed={methodFilter === ''}
                 onClick={() => setMethodFilter('')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  methodFilter === '' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                className={`flex min-h-9 items-center border px-2 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
+                  methodFilter === ''
+                    ? 'border-ink bg-ink text-canvas'
+                    : 'border-line bg-paper text-muted hover:text-ink'
                 }`}
               >
-                All ({analysis.endpoints.length})
+                All
+                <span className="ml-1 tabular-nums opacity-70">{analysis.endpoints.length}</span>
               </button>
               {methods.map((m) => {
                 const count = analysis.endpoints.filter((e) => e.method === m).length;
+                const active = methodFilter === m;
                 return (
                   <button
                     key={m}
-                    onClick={() => setMethodFilter(methodFilter === m ? '' : m)}
-                    className={`px-2.5 py-1.5 rounded-lg font-mono font-bold transition-all cursor-pointer ${
-                      methodFilter === m
-                        ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                        : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => setMethodFilter(active ? '' : m)}
+                    className={`flex min-h-9 items-center border px-2 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
+                      active
+                        ? 'border-ink bg-ink text-canvas'
+                        : 'border-line bg-paper text-muted hover:text-ink'
                     }`}
                   >
-                    {m} ({count})
+                    {m}
+                    <span className="ml-1 tabular-nums opacity-70">{count}</span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Endpoint Rows List */}
-          <div className="glass-card border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-            <div className="bg-slate-900/60 px-4 py-3 border-b border-slate-800 text-xs font-semibold text-slate-400 flex items-center justify-between">
-              <span>Discovered Endpoints ({filtered.length})</span>
-              <span className="text-[11px] text-cyan-400">Click row to inspect parameters • Click Test to dispatch scan</span>
+          <section className="aegis-panel overflow-hidden" aria-label="Discovered endpoints">
+            <div className="aegis-panel-head">
+              <h2 className="font-display text-[14px] font-semibold text-ink">
+                Discovered endpoints
+                <span className="ml-1.5 font-mono text-[10px] font-normal tabular-nums text-muted">
+                  {filtered.length}
+                </span>
+              </h2>
+              <p className="hidden font-mono text-[9px] uppercase tracking-[0.08em] text-muted sm:block">
+                Expand to inspect · test to dispatch
+              </p>
             </div>
+
             {filtered.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-xs">
-                No endpoints match your active search or filter.
+              <div className="px-6 py-10 text-center">
+                <Search className="mx-auto h-5 w-5 text-muted" aria-hidden="true" />
+                <p className="mt-2 font-display text-[13.5px] font-semibold text-ink">
+                  No endpoints match
+                </p>
+                <p className="mt-1 text-[11.5px] text-muted">
+                  Clear the search or method filter to see all operations.
+                </p>
               </div>
             ) : (
-              <div>
+              <ul>
                 {filtered.map((ep, i) => (
-                  <EndpointRow key={`${ep.method}-${ep.path}-${i}`} endpoint={ep} onTestInDashboard={handleTestInDashboard} />
+                  <EndpointRow
+                    key={`${ep.method}-${ep.path}-${i}`}
+                    endpoint={ep}
+                    onTestInDashboard={handleTestInDashboard}
+                  />
                 ))}
-              </div>
+              </ul>
             )}
-          </div>
+          </section>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

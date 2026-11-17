@@ -246,6 +246,53 @@ def generate_pdf(scan: Scan) -> bytes:
 
     story.append(Spacer(1, 0.5 * cm))
 
+    # ── API Comparison & Alternatives (Step 4) ──────────────────────────────
+    comp_data = None
+    if scan.result_json:
+        try:
+            full_json = json.loads(scan.result_json)
+            comp_data = full_json.get("comparison")
+        except Exception:
+            comp_data = None
+
+    if comp_data and comp_data.get("alternatives"):
+        story.append(Paragraph("Smart API Comparison & Recommendations", styles["h1"]))
+        summary = comp_data.get("summary", {})
+        if summary.get("headline"):
+            story.append(Paragraph(f"<b>Key Finding:</b> {summary['headline']}", styles["body"]))
+        if summary.get("overall_conclusion"):
+            story.append(Paragraph(summary["overall_conclusion"], styles["body"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+        # Comparison table
+        comp_rows = [["API Provider", "Score", "Diff", "Coverage", "Compatibility", "AEGIS Label"]]
+        for alt in comp_data.get("alternatives", [])[:5]:
+            score_str = f"{alt['assessment_score']:.1f}/100" if alt.get("assessment_score") is not None else "Not Assessed"
+            diff_str = f"{alt['score_difference']:+.1f}" if alt.get("score_difference") is not None else "—"
+            cov_str = f"{alt.get('assessment_coverage', 0):.0f}%" if alt.get("scan_status") != "not_assessed" else "—"
+            comp_rows.append([
+                Paragraph(f"<b>{alt.get('provider_name')}</b>", styles["small"]),
+                score_str,
+                diff_str,
+                cov_str,
+                alt.get("compatibility_level", "unknown").capitalize(),
+                Paragraph(alt.get("recommendation_label", ""), styles["small"]),
+            ])
+
+        tbl = Table(comp_rows, colWidths=[4 * cm, 2.2 * cm, 1.8 * cm, 2.2 * cm, 2.8 * cm, 4 * cm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), _PALETTE["navy"]),
+            ("TEXTCOLOR", (0, 0), (-1, 0), _PALETTE["white"]),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [_PALETTE["white"], _PALETTE["light_gray"]]),
+            ("GRID", (0, 0), (-1, -1), 0.3, _PALETTE["gray"]),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("PADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 0.4 * cm))
+
     # ── Limitations ───────────────────────────────────────────────────────────
     story.append(Paragraph("Scan Limitations", styles["h1"]))
     limitations = [

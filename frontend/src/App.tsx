@@ -3,6 +3,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import LandingPage from './pages/LandingPage';
@@ -11,9 +12,11 @@ import AuthCallback from './pages/AuthCallback';
 import Dashboard from './pages/Dashboard';
 import ScanResults from './pages/ScanResults';
 import ScanHistory from './pages/ScanHistory';
+import TeamManagement from './pages/TeamManagement';
 import SpecAnalyzer from './pages/SpecAnalyzer';
 import OperationScan from './pages/OperationScan';
 import Settings from './pages/Settings';
+import Recommendations from './pages/Recommendations';
 
 function ScanRoute() {
   const { session } = useAuth();
@@ -22,55 +25,81 @@ function ScanRoute() {
       <ScanResults />
     </Layout>
   ) : (
-    <ScanResults />
+    <div className="aegis-shell">
+      <main id="main-content" tabIndex={-1} className="focus:outline-none">
+        <ScanResults />
+      </main>
+    </div>
+  );
+}
+
+function RecommendationsRoute() {
+  const { session } = useAuth();
+  return session ? (
+    <Layout>
+      <Recommendations />
+    </Layout>
+  ) : (
+    <div className="aegis-shell">
+      <main id="main-content" tabIndex={-1} className="focus:outline-none">
+        <Recommendations />
+      </main>
+    </div>
   );
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1e293b',
-              color: '#f1f5f9',
-              border: '1px solid rgba(71,85,105,0.5)',
-              fontSize: '13px',
-            },
-            success: { iconTheme: { primary: '#22c55e', secondary: '#0f172a' } },
-            error: { iconTheme: { primary: '#ef4444', secondary: '#0f172a' } },
-          }}
-        />
-        <Routes>
-          {/* Public Landing & Auth routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/auth" element={<AuthPage />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
+      <WorkspaceProvider>
+        <BrowserRouter>
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: 'var(--color-paper)',
+                color: 'var(--color-ink)',
+                border: '1px solid var(--color-line-strong)',
+                fontSize: '14px',
+                borderRadius: '8px',
+                boxShadow: 'var(--shadow-overlay)',
+                fontFamily: 'var(--font-sans)',
+              },
+              success: { iconTheme: { primary: 'var(--aegis-safe-fg)', secondary: 'var(--color-paper)' } },
+              error: { iconTheme: { primary: 'var(--aegis-critical-fg)', secondary: 'var(--color-paper)' } },
+            }}
+          />
+          <Routes>
+            {/* Public Landing & Auth routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
-          {/* Scan Results viewable by both guests and authenticated users */}
-          <Route path="/scan/:scanId" element={<ScanRoute />} />
+            {/* Scan Results viewable by both guests and authenticated users */}
+            <Route path="/scan/:scanId" element={<ScanRoute />} />
+            <Route path="/scan/:scanId/recommendations" element={<RecommendationsRoute />} />
 
-          {/* Protected routes */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/history" element={<ScanHistory />} />
-            <Route path="/spec" element={<SpecAnalyzer />} />
-            <Route path="/operation-scan" element={<OperationScan />} />
-            <Route path="/settings" element={<Settings />} />
-          </Route>
+            {/* Protected routes */}
+            <Route
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/history" element={<ScanHistory />} />
+              <Route path="/team" element={<TeamManagement />} />
+              <Route path="/spec" element={<SpecAnalyzer />} />
+              <Route path="/operation-scan" element={<OperationScan />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </WorkspaceProvider>
     </AuthProvider>
   );
 }

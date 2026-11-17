@@ -4,15 +4,20 @@ app/config.py — Application settings loaded from environment variables.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import List
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_ENV_FILE = _BACKEND_DIR / ".env"
+_ROOT_ENV_FILE = _BACKEND_DIR.parent / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_ENV_FILE, _ROOT_ENV_FILE, ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -21,7 +26,7 @@ class Settings(BaseSettings):
     # Application
     app_env: str = "development"
     secret_key: str = "change-me"
-    allowed_origins: str = "http://localhost:5173,http://localhost:4173"
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:4173"
 
     # Database
     database_url: str = "sqlite+aiosqlite:///./api_sentinel.db"
@@ -40,6 +45,21 @@ class Settings(BaseSettings):
 
     # Reports
     report_retention_days: int = 30
+
+    # Supabase
+    # Workspace Auth and the authenticated scan projection share a Supabase project.
+    supabase_url: str = ""
+    supabase_auth_url: str = ""
+    supabase_auth_anon_key: str = ""
+    supabase_workspace_service_role_key: str = ""
+    supabase_jwt_secret: str = ""
+    supabase_jwt_audience: str = "authenticated"
+    supabase_jwks_cache_seconds: int = 300
+
+    # Optional evidence-grounded AI provider (OpenAI-compatible Chat Completions API).
+    ai_provider_api_key: str = ""
+    ai_provider_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "gpt-4o-mini"
 
     @property
     def cors_origins(self) -> List[str]:

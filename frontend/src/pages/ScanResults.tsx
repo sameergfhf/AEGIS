@@ -1,33 +1,46 @@
-// src/pages/ScanResults.tsx — Enhanced security scan evaluation view
+// src/pages/ScanResults.tsx — Security scan evaluation view
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Download,
   ArrowLeft,
   AlertCircle,
-  Loader2,
   RefreshCw,
   Shield,
   LogIn,
   Search,
   Clock,
-  Sparkles,
   ChevronDown,
-  ChevronUp,
   RotateCw,
+  Copy,
+  Check,
+  Wrench,
+  AlertTriangle,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useScan } from '../hooks/useScan';
-import { getReportUrl, createScan } from '../services/api';
+import { getReportUrl, createScan, explainFinding } from '../services/api';
 import ScoreCard from '../components/ScoreCard';
 import TestResultCard from '../components/TestResultCard';
 import LatencyChart from '../components/LatencyChart';
 import FlowDiagram from '../components/FlowDiagram';
 import FindingsChart from '../components/FindingsChart';
 import RequestInspector from '../components/RequestInspector';
+import ApiCategoryPanel from '../components/ApiCategoryPanel';
+import SecurityHeadersMatrix from '../components/SecurityHeadersMatrix';
+import { Button, SeverityBadge, Badge, Spinner } from '../components/ui';
 
 const TEST_ORDER = ['tls', 'headers', 'leakage', 'reputation'] as const;
+
+const VECTOR_LABELS: Record<string, string> = {
+  tls: 'Transport / TLS',
+  headers: 'Policy / headers',
+  leakage: 'Disclosure / leakage',
+  reputation: 'Intel / reputation',
+};
 
 export default function ScanResults() {
   const { scanId } = useParams<{ scanId: string }>();
@@ -39,6 +52,9 @@ export default function ScanResults() {
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [expandedFindingId, setExpandedFindingId] = useState<string | null>(null);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [copiedEvidenceId, setCopiedEvidenceId] = useState<string | null>(null);
+  const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
+  const [aiLoadingFinding, setAiLoadingFinding] = useState<string | null>(null);
 
   useEffect(() => {
     if (scanId) {
@@ -61,13 +77,30 @@ export default function ScanResults() {
     }
   };
 
+  const handleCopyEvidence = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedEvidenceId(id);
+    toast.success('Evidence copied to clipboard');
+    setTimeout(() => setCopiedEvidenceId(null), 2000);
+  };
+
+  const handleExplainFinding = async (findingId: string) => {
+    if (!scanId || !session) { toast.error('Sign in to request a finding explanation.'); return; }
+    setAiLoadingFinding(findingId);
+    try { const explanation = await explainFinding(scanId, findingId); setAiExplanations((current) => ({ ...current, [findingId]: explanation })); }
+    catch (error) { const message = error instanceof Error ? error.message : 'AI explanation is unavailable.'; toast.error(message); }
+    finally { setAiLoadingFinding(null); }
+  };
+
   if (isLoading && !scan) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="glass-card p-8 rounded-2xl border border-slate-800 flex flex-col items-center gap-3 text-slate-400">
-          <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-          <p className="text-sm font-medium text-white">Loading Security Telemetry…</p>
-          <p className="text-xs text-slate-500">Retrieving scan metrics, findings, and diagrams</p>
+      <div className="aegis-container flex min-h-[60vh] items-center justify-center py-16">
+        <div className="aegis-panel flex max-w-sm flex-col items-center gap-3 px-8 py-10 text-center">
+          <Spinner size="lg" label="" />
+          <p className="font-display text-[15px] font-semibold text-ink">Loading security telemetry</p>
+          <p className="text-[11.5px] leading-relaxed text-muted">
+            Retrieving scan metrics, findings, and behavior flow graph.
+          </p>
         </div>
       </div>
     );
@@ -75,17 +108,19 @@ export default function ScanResults() {
 
   if (error && !scan) {
     return (
-      <div className="flex items-center justify-center min-h-screen px-4">
-        <div className="glass-card p-8 text-center max-w-md border border-red-500/30 rounded-2xl">
-          <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-          <h2 className="text-lg font-bold text-white mb-2">Error Loading Scan</h2>
-          <p className="text-xs text-slate-400 mb-6 leading-relaxed">{error}</p>
-          <button
+      <div className="aegis-container flex min-h-[60vh] items-center justify-center py-16">
+        <div className="aegis-panel max-w-md px-6 py-8 text-center">
+          <AlertCircle className="mx-auto h-6 w-6 text-critical" aria-hidden="true" />
+          <h2 className="mt-3 font-display text-[17px] font-semibold text-ink">Error loading scan</h2>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-muted">{error}</p>
+          <Button
+            variant="secondary"
+            size="md"
+            className="mt-5"
             onClick={() => navigate(session ? '/dashboard' : '/')}
-            className="px-4 py-2 rounded-xl bg-slate-800 text-cyan-400 hover:text-cyan-300 text-xs font-semibold border border-slate-700 cursor-pointer"
           >
-            ← {session ? 'Back to Dashboard' : 'Back to Home'}
-          </button>
+            &larr; {session ? 'Back to dashboard' : 'Back to home'}
+          </Button>
         </div>
       </div>
     );
@@ -93,17 +128,23 @@ export default function ScanResults() {
 
   if (!scan) return null;
 
-  // Parse test results from result_json
+  // Parse test results & response headers from result_json
   let testResults: Record<string, import('../types').TestResult> = {};
+  let rawHeaders: Record<string, string> = {};
   try {
     if (scan.result_json) {
       const data = JSON.parse(scan.result_json);
       testResults = data.test_results ?? {};
+      rawHeaders = data.response?.headers ?? {};
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   const isRunning = scan.status === 'pending' || scan.status === 'running';
   const isFailed = scan.status === 'failed';
+
+  const severityOptions = ['all', 'critical', 'high', 'medium', 'low', 'informational'];
 
   // Filter findings
   const filteredFindings = findings.filter((f) => {
@@ -115,281 +156,448 @@ export default function ScanResults() {
     return matchesSearch && matchesSeverity;
   });
 
+  const vectorCount = TEST_ORDER.filter((key) => testResults[key]).length;
+
   return (
-    <div className="min-h-screen px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-6">
-      {/* ── Guest Mode Banner ──────────────────────────────────────────────── */}
-      {!session && (
-        <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-lg shadow-cyan-950/40">
-          <div className="flex items-center gap-2.5 text-cyan-200">
-            <Shield className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-            <span>
-              You are viewing this assessment in <strong>Guest Mode</strong>.
+    <div className="aegis-container aegis-reveal pb-16 page-report">
+      {!session ? (
+        <div className="mt-4 flex flex-col items-start justify-between gap-3 border border-line-strong bg-forest/5 px-4 py-3 sm:flex-row sm:items-center">
+          <div className="flex items-center gap-2.5 text-forest">
+            <Shield className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="text-[12px]">
+              Viewing this assessment in <strong className="font-semibold">guest mode</strong>.
             </span>
           </div>
-          <Link
-            to="/auth"
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold transition-all shadow-md shadow-cyan-500/20"
-          >
-            <LogIn className="w-3.5 h-3.5" />
-            Sign in to save scan to history
+          <Link to="/auth" className="aegis-secondary-action">
+            <LogIn className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="sm:hidden">Sign in to save</span>
+            <span className="hidden sm:inline">Sign in to save to workspace history</span>
           </Link>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
-        <div>
+      <header className="aegis-page-header">
+        <div className="min-w-0">
           <button
             onClick={() => navigate(session ? '/dashboard' : '/')}
-            className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-cyan-400 mb-2 transition-colors cursor-pointer"
+            className="aegis-ghost-action -ml-2 mb-2 min-h-9 px-2"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>{session ? 'Back to Dashboard' : 'Back to Homepage'}</span>
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            <span>{session ? 'Back to dashboard' : 'Back to home'}</span>
           </button>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-xl sm:text-2xl font-extrabold text-white font-mono tracking-tight">
+          <p className="aegis-eyebrow">Assessment / result</p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <h1 className="break-words font-mono text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[26px]">
               {scan.hostname}
             </h1>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 font-mono">
-              HTTPS
-            </span>
-            {scan.duration_ms && (
-              <span className="flex items-center gap-1 text-[11px] text-slate-400 font-mono">
-                <Clock className="w-3 h-3 text-slate-500" />
+            {scan.url.startsWith('https://') ? (
+              <Badge variant="success" size="xs">
+                HTTPS
+              </Badge>
+            ) : null}
+            {scan.duration_ms ? (
+              <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+                <Clock className="h-3 w-3" aria-hidden="true" />
                 {(scan.duration_ms / 1000).toFixed(2)}s probe
               </span>
-            )}
+            ) : null}
           </div>
-          <p className="text-xs text-slate-500 font-mono mt-1 truncate max-w-xl">{scan.url}</p>
+
+          <p className="mt-2 max-w-2xl break-all font-mono text-[12px] text-muted">{scan.url}</p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-line pt-3 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted">
+            <span>
+              Status <span className="text-ink">{scan.status}</span>
+            </span>
+            <span>
+              Vectors <span className="tabular-nums text-ink">{vectorCount}/4</span>
+            </span>
+            <span>
+              Findings <span className="tabular-nums text-ink">{findings.length}</span>
+            </span>
+            <span>
+              Scan ID <span className="text-ink">{scan.id.slice(0, 8)}</span>
+            </span>
+          </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {isPolling && (
-            <div className="flex items-center gap-2 text-xs font-semibold text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2 rounded-xl">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              Scanning Target…
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          {isPolling ? (
+            <div
+              className="flex min-h-9 w-full items-center justify-center gap-2 border border-line-strong bg-canvas px-3 font-mono text-[10px] uppercase tracking-[0.08em] text-forest sm:w-auto"
+              aria-live="polite"
+            >
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              <span>Scanning target…</span>
             </div>
-          )}
+          ) : null}
 
-          {scan.status === 'completed' && (
+          {scan.status === 'completed' ? (
             <>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handleRescan}
                 disabled={isRescanning}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-700 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600 text-xs font-semibold transition-all cursor-pointer"
+                leftIcon={
+                  <RotateCw
+                    className={`h-3.5 w-3.5 ${isRescanning ? 'animate-spin text-forest' : ''}`}
+                  />
+                }
+                className="w-full sm:w-auto"
               >
-                <RotateCw className={`w-3.5 h-3.5 ${isRescanning ? 'animate-spin text-cyan-400' : ''}`} />
                 Re-scan
-              </button>
+              </Button>
 
               <a
                 href={getReportUrl(scan.id)}
                 download
                 id="download-report-btn"
-                className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-cyan-500/20 transition-all cursor-pointer"
+                className="aegis-primary-action w-full justify-center sm:w-auto"
                 onClick={() => toast.success('Downloading compliance-ready PDF report…')}
               >
-                <Download className="w-4 h-4" />
-                Export PDF Report
+                <Download className="h-4 w-4" aria-hidden="true" />
+                <span>Export PDF report</span>
               </a>
             </>
-          )}
+          ) : null}
         </div>
-      </div>
+      </header>
 
-      {/* ── Scanning State Banner ────────────────────────────────────────────── */}
-      {isRunning && (
-        <div className="glass-card p-6 rounded-2xl border border-cyan-500/40 bg-cyan-950/20 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-cyan-500/30 border-t-cyan-500 animate-spin flex-shrink-0" />
-          <div>
-            <p className="text-white font-bold text-sm">Security Audit in Progress</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Executing TLS handshakes, security header audits, information leak detection, and threat intel lookups…
-            </p>
+      {isRunning ? (
+        <section
+          className="aegis-panel border-line-strong"
+          aria-live="polite"
+          aria-busy="true"
+          aria-label="Scan in progress"
+        >
+          <div className="aegis-panel-head">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-line-strong bg-canvas">
+                <Shield className="h-4 w-4 text-forest" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="aegis-eyebrow">Live / probe</p>
+                <p className="mt-1 font-display text-[15px] font-semibold text-ink">
+                  Security audit in progress
+                </p>
+              </div>
+            </div>
+            <Badge variant="cyan" size="xs" pulse>
+              Running
+            </Badge>
           </div>
-        </div>
-      )}
 
-      {/* ── Failed State Banner ──────────────────────────────────────────────── */}
-      {isFailed && (
-        <div className="glass-card p-6 rounded-2xl border-red-500/30 bg-red-950/20 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+          <div className="px-4 py-4 sm:px-5">
+            <p className="break-all font-mono text-[11px] text-muted">{scan.url}</p>
+            <ol className="mt-4 grid gap-px bg-line sm:grid-cols-4">
+              {TEST_ORDER.map((key) => (
+                <li key={key} className="flex items-center gap-2 bg-paper px-3 py-2.5">
+                  <span className="aegis-live-dot aegis-live-dot--pulse" aria-hidden="true" />
+                  <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+                    {VECTOR_LABELS[key]}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
+      ) : null}
+
+      {isFailed ? (
+        <div
+          className="mt-4 flex items-start gap-3 border border-critical/30 bg-critical/5 px-4 py-4"
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-critical" aria-hidden="true" />
           <div>
-            <p className="text-white font-bold text-sm">Audit Failed</p>
-            <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+            <p className="font-display text-[14px] font-semibold text-ink">Audit failed</p>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
               {scan.error_message || 'The target host could not be audited or rejected connection.'}
             </p>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Completed Results Dashboard ──────────────────────────────────────── */}
-      {scan.status === 'completed' && (
-        <div className="space-y-8">
-          {/* Top Row: Score Ring Card & Sanitized Request Inspector */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            <ScoreCard scan={scan} />
+      {scan.status === 'completed' ? (
+        <div className="report-workspace">
+          <div className="report-workspace-content">
+          <section id="report-overview" className="grid items-stretch gap-4 xl:grid-cols-2" aria-label="Score and capture">
+            <ScoreCard
+              scan={scan}
+              findings={findings}
+              findingsBySeverity={visualizations?.findings_by_severity}
+            />
             <RequestInspector scan={scan} />
-          </div>
+          </section>
 
-          {/* Test Pillars Cards */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-cyan-400" />
-                Four Security Vector Evaluations
-              </h2>
-              <span className="text-[11px] text-slate-500">Click card to expand findings &amp; evidence</span>
+          <section id="report-category" className="report-content-section" aria-label="API profile">
+            <div className="report-section-heading"><span>02</span><div><small>API PROFILE</small><h2>Understand this endpoint</h2></div></div>
+            <ApiCategoryPanel scanId={scan.id} scanStatus={scan.status} />
+          </section>
+
+          <section className="report-recommendations-cta" aria-label="API recommendations">
+            <span className="report-recommendations-icon"><Sparkles size={20} /></span>
+            <div>
+              <p>LOOKING FOR AN ALTERNATIVE?</p>
+              <h2>Explore API recommendations</h2>
+              <span>Find similar services, compare security evidence, and review the strongest matches in a dedicated workspace.</span>
             </div>
-            <div className="space-y-3">
+            <Link to={`/scan/${scan.id}/recommendations`} className="report-recommendations-link">Explore recommendations <ArrowUpRight size={16} /></Link>
+          </section>
+
+          <section id="report-vectors" aria-labelledby="vectors-heading" className="space-y-3">
+            <div className="flex flex-col justify-between gap-2 border-b border-line pb-2.5 sm:flex-row sm:items-end">
+              <div>
+                <p className="aegis-eyebrow">Vectors / evaluation</p>
+                <h2
+                  id="vectors-heading"
+                  className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink"
+                >
+                  Security vector evaluations
+                </h2>
+              </div>
+              <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+                Expand for checks &amp; evidence
+              </p>
+            </div>
+
+            <div className="space-y-2.5">
               {TEST_ORDER.map((key) =>
                 testResults[key] ? (
                   <TestResultCard key={key} testKey={key} result={testResults[key]} />
                 ) : null,
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Visual Intelligence Engine Charts */}
-          {visualizations && (
-            <div className="space-y-4">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-                Visual Intelligence Telemetry
+          <section id="report-telemetry" aria-labelledby="telemetry-heading" className="space-y-4">
+            <div className="border-b border-line pb-2.5">
+              <p className="aegis-eyebrow">Telemetry / visual</p>
+              <h2
+                id="telemetry-heading"
+                className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink"
+              >
+                Headers, timing &amp; behaviour
               </h2>
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                <LatencyChart latency={visualizations.latency} />
-                <FindingsChart
-                  findingsBySeverity={visualizations.findings_by_severity}
-                  findings={findings}
-                />
-              </div>
-
-              {/* Full Width Flow Diagram */}
-              <div className="space-y-2">
-                <FlowDiagram flow={visualizations.flow} />
-              </div>
             </div>
-          )}
 
-          {/* Detailed Findings Table with Filters */}
-          {findings.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {testResults.headers ? (
+              <SecurityHeadersMatrix headersResult={testResults.headers} rawHeaders={rawHeaders} />
+            ) : null}
+
+            {visualizations ? (
+              <>
+                <div className="grid items-start gap-4 xl:grid-cols-2">
+                  <LatencyChart latency={visualizations.latency} />
+                  <FindingsChart
+                    findingsBySeverity={visualizations.findings_by_severity}
+                    findings={findings}
+                  />
+                </div>
+
+                <FlowDiagram flow={visualizations.flow} />
+              </>
+            ) : null}
+          </section>
+
+          {findings.length > 0 ? (
+            <section id="report-findings" aria-labelledby="findings-heading" className="space-y-3">
+              <div className="flex flex-col justify-between gap-3 border-b border-line pb-3 sm:flex-row sm:items-end">
                 <div>
-                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Disclosed Findings &amp; Remediation Advisory
+                  <p className="aegis-eyebrow">Findings / advisory</p>
+                  <h2
+                    id="findings-heading"
+                    className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink"
+                  >
+                    Disclosed findings &amp; remediation
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {findings.length} total findings identified across all vectors
+                  <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+                    {findings.length} total across all vectors
                   </p>
                 </div>
 
-                {/* Severity Filter Chips */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  {['all', 'critical', 'high', 'medium', 'low', 'informational'].map((sev) => {
-                    const count = sev === 'all' ? findings.length : findings.filter((f) => f.severity === sev).length;
+                <div
+                  role="group"
+                  aria-label="Filter findings by severity"
+                  className="flex flex-wrap items-center gap-1"
+                >
+                  {severityOptions.map((sev) => {
+                    const count =
+                      sev === 'all'
+                        ? findings.length
+                        : findings.filter((f) => f.severity === sev).length;
                     if (sev !== 'all' && count === 0) return null;
+                    const active = severityFilter === sev;
                     return (
                       <button
                         key={sev}
+                        type="button"
+                        aria-pressed={active}
                         onClick={() => setSeverityFilter(sev)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                          severityFilter === sev
-                            ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                            : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                        className={`flex min-h-9 items-center gap-1 border px-2 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
+                          active
+                            ? 'border-ink bg-ink text-canvas'
+                            : 'border-line bg-paper text-muted hover:text-ink'
                         }`}
                       >
-                        {sev} ({count})
+                        {sev}
+                        <span className={`tabular-nums ${active ? 'text-canvas/70' : 'text-muted'}`}>
+                          {count}
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="glass-card border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <div className="p-3 border-b border-slate-800 bg-slate-900/60">
-                  <div className="relative max-w-sm">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+              <div className="aegis-panel overflow-hidden">
+                <div className="border-b border-line bg-canvas p-3 sm:px-4">
+                  <div className="aegis-input-shell max-w-sm gap-2.5 px-3">
+                    <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                    <label htmlFor="finding-search" className="sr-only">
+                      Search findings by title or keyword
+                    </label>
                     <input
+                      id="finding-search"
                       type="text"
                       placeholder="Search findings by title or keyword…"
                       value={findingSearch}
                       onChange={(e) => setFindingSearch(e.target.value)}
-                      className="w-full bg-slate-950/80 border border-slate-700/60 text-white text-xs pl-8 pr-4 py-1.5 rounded-lg outline-none focus:border-cyan-500/50 placeholder-slate-500 font-mono"
+                      className="min-h-10 w-full bg-transparent font-mono text-[11.5px] text-ink outline-none placeholder:text-muted"
                     />
                   </div>
                 </div>
 
-                <div className="divide-y divide-slate-800/60">
-                  {filteredFindings.map((f) => {
-                    const isExpanded = expandedFindingId === f.id;
-                    return (
-                      <div key={f.id} className="p-4 hover:bg-slate-850/40 transition-colors">
-                        <div
-                          className="flex items-start justify-between gap-3 cursor-pointer"
-                          onClick={() => setExpandedFindingId(isExpanded ? null : f.id)}
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <span className={`capitalize severity-${f.severity} text-[10px] font-bold px-2 py-0.5 rounded-full border mt-0.5 flex-shrink-0`}>
-                              {f.severity}
-                            </span>
-                            <div>
-                              <p className="text-xs font-bold text-white hover:text-cyan-300 transition-colors">
-                                {f.title}
-                              </p>
-                              {f.description && (
-                                <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                                  {f.description}
-                                </p>
-                              )}
+                <div className="divide-y divide-line">
+                  {filteredFindings.length === 0 ? (
+                    <div className="px-6 py-10 text-center" role="status">
+                      <Search className="mx-auto h-5 w-5 text-muted" aria-hidden="true" />
+                      <p className="mt-2 font-display text-[14px] font-semibold text-ink">
+                        No matching findings
+                      </p>
+                      <p className="mt-1 text-[11.5px] text-muted">
+                        Try another keyword or clear the active filters.
+                      </p>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => {
+                          setFindingSearch('');
+                          setSeverityFilter('all');
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    </div>
+                  ) : (
+                    filteredFindings.map((f) => {
+                      const isExpanded = expandedFindingId === f.id;
+                      return (
+                        <div key={f.id} className="px-3.5 py-3.5 transition-colors hover:bg-canvas sm:px-4">
+                          <button
+                            type="button"
+                            aria-expanded={isExpanded}
+                            aria-controls={`finding-details-${f.id}`}
+                            className="flex w-full items-start justify-between gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                            onClick={() => setExpandedFindingId(isExpanded ? null : f.id)}
+                          >
+                            <div className="flex min-w-0 items-start gap-2.5">
+                              <SeverityBadge severity={f.severity} size="xs" className="mt-0.5 shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-[13px] font-semibold leading-snug text-ink">{f.title}</p>
+                                {f.description ? (
+                                  <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
+                                    {f.description}
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
 
-                          <div className="text-slate-500 hover:text-slate-300 ml-2 flex-shrink-0">
-                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          </div>
+                            <ChevronDown
+                              className={`mt-0.5 h-4 w-4 shrink-0 text-muted transition-transform duration-200 ${
+                                isExpanded ? 'rotate-180' : ''
+                              }`}
+                              aria-hidden="true"
+                            />
+                          </button>
+
+                          {isExpanded ? (
+                            <div
+                              id={`finding-details-${f.id}`}
+                              role="region"
+                              aria-label={`${f.title} details`}
+                              className="aegis-reveal mt-3 space-y-2.5 border-t border-line pt-3"
+                            >
+                              {f.why_it_matters ? (
+                                <div className="border-l-2 border-l-high bg-high/5 px-3.5 py-2.5">
+                                  <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-high">
+                                    <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                                    Why it matters
+                                  </span>
+                                  <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
+                                    {f.why_it_matters}
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {f.remediation ? (
+                                <div className="border-l-2 border-l-forest bg-safe/6 px-3.5 py-2.5">
+                                  <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-forest">
+                                    <Wrench className="h-3 w-3" aria-hidden="true" />
+                                    Recommended remediation
+                                  </span>
+                                  <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
+                                    {f.remediation}
+                                  </p>
+                                </div>
+                              ) : null}
+
+                              {f.evidence ? (
+                                <div className="border border-line bg-canvas">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
+                                    <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                                      Collected telemetry evidence
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyEvidence(f.id, f.evidence ?? '')}
+                                      className="flex min-h-9 items-center gap-1.5 px-1.5 font-mono text-[9.5px] uppercase tracking-[0.06em] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                                      aria-label={copiedEvidenceId === f.id ? 'Evidence copied' : 'Copy evidence'}
+                                    >
+                                      {copiedEvidenceId === f.id ? (
+                                        <Check className="h-3 w-3 text-safe" aria-hidden="true" />
+                                      ) : (
+                                        <Copy className="h-3 w-3" aria-hidden="true" />
+                                      )}
+                                      <span>{copiedEvidenceId === f.id ? 'Copied' : 'Copy'}</span>
+                                    </button>
+                                  </div>
+                                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-[11px] leading-relaxed text-muted">
+                                    {f.evidence}
+                                  </pre>
+                                </div>
+                              ) : null}
+                              {session ? <div className="space-y-2">
+                                <Button variant="secondary" size="sm" disabled={aiLoadingFinding === f.id} leftIcon={<Sparkles className="h-3 w-3" />} onClick={() => void handleExplainFinding(f.id)}>{aiLoadingFinding === f.id ? 'Analyzing redacted evidence…' : 'Explain with AI'}</Button>
+                                {aiExplanations[f.id] ? <div className="border-l-2 border-l-forest bg-canvas px-3.5 py-2.5"><span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest">AI-generated explanation · suggestions only</span><p className="mt-1 mb-0 whitespace-pre-wrap text-[11.5px] leading-relaxed text-muted">{aiExplanations[f.id]}</p></div> : null}
+                              </div> : null}
+                            </div>
+                          ) : null}
                         </div>
-
-                        {/* Expandable Remediation Panel */}
-                        {isExpanded && (
-                          <div className="mt-4 pt-3 border-t border-slate-800/70 space-y-3 text-xs fade-in">
-                            {f.why_it_matters && (
-                              <div className="p-3 rounded-xl bg-amber-950/20 border border-amber-500/20 text-amber-200">
-                                <span className="font-bold uppercase tracking-wider text-[10px] block mb-1">Why It Matters</span>
-                                <p className="leading-relaxed">{f.why_it_matters}</p>
-                              </div>
-                            )}
-
-                            {f.remediation && (
-                              <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-emerald-200">
-                                <span className="font-bold uppercase tracking-wider text-[10px] block mb-1">Recommended Remediation</span>
-                                <p className="leading-relaxed">{f.remediation}</p>
-                              </div>
-                            )}
-
-                            {f.evidence && (
-                              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300">
-                                <span className="font-bold uppercase tracking-wider text-[10px] text-slate-500 block mb-1 font-sans">
-                                  Collected Telemetry Evidence
-                                </span>
-                                <pre className="overflow-x-auto whitespace-pre-wrap">{f.evidence}</pre>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            </section>
+          ) : null}
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -53,3 +53,6 @@ class Scan(Base):
     user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Workspace / Team association (Optional)
+    workspace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+

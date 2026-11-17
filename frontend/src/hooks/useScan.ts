@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createScan, getScan, getFindings, getVisualizations, getErrorMessage } from '../services/api';
-import { persistScanToSupabase } from '../services/supabaseService';
 import type { Scan, Finding, Visualizations } from '../types';
 
 const POLL_INTERVAL_MS = 2000;
@@ -14,7 +13,7 @@ interface UseScanReturn {
   isLoading: boolean;
   isPolling: boolean;
   error: string | null;
-  startScan: (url: string, notes?: string) => Promise<void>;
+  startScan: (url: string, notes?: string, workspaceId?: string | null) => Promise<void>;
   loadScan: (scanId: string) => Promise<void>;
 }
 
@@ -58,7 +57,8 @@ export function useScan(): UseScanReturn {
           stopPolling();
           if (updated.status === 'completed') {
             await fetchExtras(scanId);
-            persistScanToSupabase(updated).catch(() => {});
+          } else if (updated.status === 'failed' && updated.error_message) {
+            setError(updated.error_message);
           }
         } else {
           pollRef.current = setTimeout(tick, POLL_INTERVAL_MS);
@@ -71,13 +71,13 @@ export function useScan(): UseScanReturn {
     tick();
   }, [fetchExtras, stopPolling]);
 
-  const startScan = useCallback(async (url: string, notes?: string) => {
+  const startScan = useCallback(async (url: string, notes?: string, workspaceId?: string | null) => {
     setIsLoading(true);
     setError(null);
     setFindings([]);
     setVisualizations(null);
     try {
-      const newScan = await createScan(url, notes);
+      const newScan = await createScan(url, notes, workspaceId);
       setScan(newScan);
       poll(newScan.id);
     } catch (err) {
@@ -95,6 +95,8 @@ export function useScan(): UseScanReturn {
       setScan(loadedScan);
       if (loadedScan.status === 'completed') {
         await fetchExtras(scanId);
+      } else if (loadedScan.status === 'failed' && loadedScan.error_message) {
+        setError(loadedScan.error_message);
       } else if (loadedScan.status === 'pending' || loadedScan.status === 'running') {
         poll(scanId);
       }

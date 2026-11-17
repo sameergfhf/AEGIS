@@ -25,27 +25,41 @@ async def list_scans(
     offset: int = 0,
     scope: str = "workspace",
     user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> HistoryOut:
-    # 1. Total count across entire workspace
+    # 1. Guest mode (unauthenticated): strictly do NOT retrieve data from database
+    if not user_id:
+        return HistoryOut(scans=[], total=0, my_total=0, workspace_total=0)
+
+    # 2. Authenticated user: strictly exclude any scan where user_id IS NULL
+    # Personal history is always restricted to the authenticated owner.
+    my_count_stmt = (
+        select(func.count())
+        .select_from(Scan)
+        .where(Scan.user_id == user_id)
+        .where(Scan.workspace_id.is_(None))
+    )
+    my_res = await db.execute(my_count_stmt)
+    my_total = my_res.scalar_one() or 0
+
+    # Workspace history can include scans from other members, but the route
+    # must first verify active workspace membership.
     workspace_count_stmt = select(func.count()).select_from(Scan)
+    if workspace_id:
+        workspace_count_stmt = workspace_count_stmt.where(Scan.workspace_id == workspace_id)
+    else:
+        workspace_count_stmt = workspace_count_stmt.where(Scan.user_id == user_id)
     workspace_res = await db.execute(workspace_count_stmt)
     workspace_total = workspace_res.scalar_one() or 0
 
-    # 2. Total count for current user
-    if user_id:
-        my_count_stmt = select(func.count()).select_from(Scan).where(Scan.user_id == user_id)
-        my_res = await db.execute(my_count_stmt)
-        my_total = my_res.scalar_one() or 0
-    else:
-        my_total = 0
-
-    # 3. Query based on scope
     query = select(Scan).order_by(desc(Scan.started_at))
-    if scope == "my" and user_id:
-        query = query.where(Scan.user_id == user_id)
-        total = my_total
+    if scope == "my":
+        query = query.where(Scan.user_id == user_id, Scan.workspace_id.is_(None))
+    elif workspace_id:
+        query = query.where(Scan.workspace_id == workspace_id)
     else:
-        total = workspace_total
+        query = query.where(Scan.user_id == user_id)
+    total = my_total if scope == "my" else workspace_total
 
     query = query.limit(limit).offset(offset)
     result = await db.execute(query)

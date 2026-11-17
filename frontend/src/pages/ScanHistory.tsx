@@ -1,5 +1,5 @@
-// src/pages/ScanHistory.tsx — Elevated Security Audit Log & Delta Comparison
-import { useState, useEffect } from 'react';
+// src/pages/ScanHistory.tsx — Security audit log & delta comparison
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   History,
@@ -17,44 +17,58 @@ import {
   User,
   Users,
   Shield,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 import { getScanHistory, compareScans } from '../services/api';
+import { parseApiTimestamp } from '../lib/dateTime';
 import type { ScanSummary, ComparisonResult } from '../types';
+import { Button, SeverityBadge, EmptyState, Spinner } from '../components/ui';
 import toast from 'react-hot-toast';
 
 function ScoreChange({ change }: { change?: number }) {
   if (change === undefined || change === null) return null;
   if (change > 0) {
     return (
-      <span className="text-emerald-400 font-extrabold flex items-center justify-center gap-1 font-mono">
-        <TrendingUp className="w-4 h-4" />+{change.toFixed(1)}
+      <span className="flex items-center justify-center gap-1 font-mono text-safe">
+        <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />+{change.toFixed(1)}
       </span>
     );
   }
   if (change < 0) {
     return (
-      <span className="text-red-400 font-extrabold flex items-center justify-center gap-1 font-mono">
-        <TrendingDown className="w-4 h-4" />{change.toFixed(1)}
+      <span className="flex items-center justify-center gap-1 font-mono text-critical">
+        <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />
+        {change.toFixed(1)}
       </span>
     );
   }
   return (
-    <span className="text-slate-400 font-bold flex items-center justify-center gap-1 font-mono">
-      <Minus className="w-3.5 h-3.5" />0.0
+    <span className="flex items-center justify-center gap-1 font-mono text-muted">
+      <Minus className="h-3 w-3" aria-hidden="true" />0.0
     </span>
   );
 }
 
-function ScoreBadge({ score }: { score?: number }) {
-  if (score === undefined || score === null) return <span className="text-slate-500 font-mono">—</span>;
-  let color = 'text-red-400 bg-red-500/10 border-red-500/20';
-  if (score >= 90) color = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-  else if (score >= 70) color = 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20';
-  else if (score >= 50) color = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
+function scoreTone(score?: number | null) {
+  if (score === undefined || score === null) return 'text-muted border-line bg-elevated';
+  if (score >= 90) return 'text-safe border-safe/30 bg-safe/10';
+  if (score >= 70) return 'text-info border-info/30 bg-info/10';
+  if (score >= 50) return 'text-medium border-medium/30 bg-medium/10';
+  return 'text-critical border-critical/30 bg-critical/10';
+}
 
+function ScoreBadge({ score }: { score?: number | null }) {
+  if (score === undefined || score === null) {
+    return <span className="font-mono text-[11px] tabular-nums text-muted">—</span>;
+  }
   return (
-    <span className={`px-2 py-0.5 rounded font-mono font-bold text-xs border ${color}`}>
+    <span
+      className={`inline-flex items-center border px-1.5 py-1 font-mono text-[10.5px] font-medium tabular-nums ${scoreTone(
+        score,
+      )}`}
+    >
       {score.toFixed(0)}/100
     </span>
   );
@@ -63,6 +77,7 @@ function ScoreBadge({ score }: { score?: number }) {
 export default function ScanHistory() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { currentWorkspace } = useWorkspace();
   const [scope, setScope] = useState<'workspace' | 'my'>('workspace');
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -75,22 +90,38 @@ export default function ScanHistory() {
   const [isLoading, setIsLoading] = useState(true);
   const [isComparing, setIsComparing] = useState(false);
 
-  const fetchScans = (currentScope: 'workspace' | 'my' = scope) => {
-    setIsLoading(true);
-    getScanHistory(50, 0, currentScope)
-      .then((r) => {
-        setScans(r.scans);
-        setTotal(r.total);
-        if (r.my_total !== undefined) setMyTotal(r.my_total);
-        if (r.workspace_total !== undefined) setWorkspaceTotal(r.workspace_total);
-      })
-      .catch(() => toast.error('Failed to load scan history'))
-      .finally(() => setIsLoading(false));
-  };
+  const fetchScans = useCallback(
+    (currentScope: 'workspace' | 'my' = scope) => {
+      if (!user) {
+        setScans([]);
+        setTotal(0);
+        setMyTotal(0);
+        setWorkspaceTotal(0);
+        setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      getScanHistory(
+        50,
+        0,
+        currentScope,
+        currentScope === 'workspace' ? currentWorkspace?.id : undefined,
+      )
+        .then((r) => {
+          setScans(r.scans);
+          setTotal(r.total);
+          if (r.my_total !== undefined) setMyTotal(r.my_total);
+          if (r.workspace_total !== undefined) setWorkspaceTotal(r.workspace_total);
+        })
+        .catch(() => toast.error('Failed to load scan history'))
+        .finally(() => setIsLoading(false));
+    },
+    [user, currentWorkspace?.id, scope],
+  );
 
   useEffect(() => {
     fetchScans(scope);
-  }, [scope]);
+  }, [fetchScans, scope]);
 
   const filtered = scans.filter((s) => {
     const matchesSearch =
@@ -125,138 +156,148 @@ export default function ScanHistory() {
     }
   };
 
+  const coverageLabel = (value?: number | null) => {
+    if (value === undefined || value === null) return '—';
+    return value <= 1 ? `${Math.round(value * 100)}%` : `${Math.round(value)}%`;
+  };
+
+  const newFindings = comparison?.finding_changes?.filter((f) => f.status === 'new') ?? [];
+  const resolvedFindings =
+    comparison?.finding_changes?.filter((f) => f.status === 'not_detected') ?? [];
+
   return (
-    <div className="min-h-screen px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-6">
-      {/* ── Page Header ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Security Audit Logs</span>
-            <span className="text-slate-600">•</span>
-            <span className="text-xs text-slate-400 font-mono">{total} Total Probes</span>
+    <div className="aegis-container pb-24 pt-6 lg:pb-16 page-history">
+      <header className="aegis-page-header">
+        <div className="min-w-0">
+          <p className="aegis-eyebrow">Ledger / history</p>
+          <h1 className="aegis-page-title">Audit log &amp; posture tracking</h1>
+          <p className="aegis-lede mt-3">
+            Every observable probe on record. Select any two entries to compute a posture delta
+            against the same baseline.
+          </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-line pt-3 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted">
+            <span>
+              Entries <span className="tabular-nums text-ink">{total}</span>
+            </span>
+            <span>
+              Team <span className="tabular-nums text-ink">{workspaceTotal || 0}</span>
+            </span>
+            <span>
+              Personal <span className="tabular-nums text-ink">{myTotal}</span>
+            </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-            <History className="w-6 h-6 text-cyan-400" />
-            Scan History &amp; Posture Tracking
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Browse previous observable scans, monitor posture trends, or select any 2 scans to run delta comparisons.
+        </div>
+
+        <Button
+          variant="primary"
+          size="md"
+          onClick={() => navigate('/dashboard')}
+          leftIcon={<Sparkles className="h-3.5 w-3.5" />}
+          className="w-full sm:w-auto"
+        >
+          New security probe
+        </Button>
+      </header>
+
+      <section className="border-b border-line py-4" aria-label="Scope and retention">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="aegis-label mr-0.5">Retain in</span>
+            <div className="flex border border-line-strong" role="group" aria-label="History scope">
+              <button
+                type="button"
+                aria-pressed={scope === 'workspace'}
+                onClick={() => setScope('workspace')}
+                className={`flex min-h-9 items-center gap-1.5 px-3 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
+                  scope === 'workspace' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
+                }`}
+              >
+                <Users className="h-3.5 w-3.5" aria-hidden="true" />
+                Team
+                <span className={`tabular-nums ${scope === 'workspace' ? 'text-canvas/70' : 'text-muted'}`}>
+                  {workspaceTotal || (scope === 'workspace' ? total : 0)}
+                </span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={scope === 'my'}
+                onClick={() => {
+                  if (!user) {
+                    toast('Sign in to view your private personal scans');
+                    return;
+                  }
+                  setScope('my');
+                }}
+                className={`flex min-h-9 items-center gap-1.5 border-l border-line-strong px-3 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
+                  scope === 'my' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
+                }`}
+              >
+                <User className="h-3.5 w-3.5" aria-hidden="true" />
+                Personal
+                {user ? (
+                  <span className={`tabular-nums ${scope === 'my' ? 'text-canvas/70' : 'text-muted'}`}>
+                    {myTotal}
+                  </span>
+                ) : null}
+              </button>
+            </div>
+          </div>
+
+          <p className="flex items-center gap-1.5 px-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+            <Shield className="h-3.5 w-3.5 text-forest" aria-hidden="true" />
+            {scope === 'my'
+              ? 'Personal scans only'
+              : `Team scope · ${currentWorkspace?.name ?? 'Workspace'}`}
           </p>
         </div>
+      </section>
 
-        {/* Action button */}
-        <button
-          onClick={() => navigate('/dashboard')}
-          className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-md shadow-cyan-500/20 transition-all self-start sm:self-auto cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          New Probe
-        </button>
-      </div>
-
-      {/* ── Scope Toggle: My Scans vs Workspace / Team Scans ──────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800">
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-950/80 border border-slate-800/80 self-start sm:self-auto">
-          <button
-            onClick={() => setScope('workspace')}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              scope === 'workspace'
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Workspace / Team Scans</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-              scope === 'workspace' ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
-            }`}>
-              {workspaceTotal || total}
-            </span>
-          </button>
-
-          <button
-            onClick={() => {
-              if (!user) {
-                toast('Sign in to view your private personal scans', { icon: '🔒' });
-                return;
-              }
-              setScope('my');
-            }}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              scope === 'my'
-                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20'
-                : user
-                ? 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                : 'text-slate-500 hover:text-slate-400 opacity-60'
-            }`}
-            title={user ? 'Filter scans created by your account' : 'Sign in to access personal scan filtering'}
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>My Scans</span>
-            {user ? (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                scope === 'my' ? 'bg-black/30 text-white' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {myTotal}
-              </span>
-            ) : (
-              <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-normal">
-                Sign In
-              </span>
-            )}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 text-xs text-slate-400 px-2">
-          {scope === 'my' ? (
-            <span className="flex items-center gap-1.5 text-cyan-400">
-              <Shield className="w-3.5 h-3.5" />
-              <span>Isolated User View: Showing only probes created by your account</span>
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-slate-400">
-              <Users className="w-3.5 h-3.5 text-slate-500" />
-              <span>Shared Team Audit Log: Showing all organization and public probe records</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── Filters & Search Bar ─────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+      <div className="history-toolbar flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="aegis-input-shell max-w-md flex-1 gap-2.5 px-3">
+          <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+          <label htmlFor="history-search" className="sr-only">
+            Search scans by hostname or URL
+          </label>
           <input
+            id="history-search"
             type="text"
-            placeholder="Search by hostname, path, or URL…"
+            placeholder="Search by hostname, path, or URL"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-slate-900/90 border border-slate-700/80 text-white text-xs sm:text-sm pl-9 pr-8 py-2.5 rounded-xl outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 placeholder-slate-500 font-mono transition-all"
+            className="min-h-11 w-full bg-transparent font-mono text-[12px] text-ink outline-none placeholder:text-muted"
           />
-          {search && (
+          {search ? (
             <button
+              type="button"
               onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+              aria-label="Clear search"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
-          )}
+          ) : null}
         </div>
 
-        {/* Status Filter Chips */}
-        <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900 border border-slate-800 self-start sm:self-auto text-xs">
+        <div
+          role="group"
+          aria-label="Filter by status"
+          className="flex items-center gap-1 self-start sm:self-auto"
+        >
           {[
-            { id: 'all', label: 'All Scans' },
+            { id: 'all', label: 'All' },
             { id: 'completed', label: 'Completed' },
             { id: 'failed', label: 'Failed' },
           ].map((tab) => (
             <button
               key={tab.id}
+              type="button"
+              aria-pressed={statusFilter === tab.id}
               onClick={() => setStatusFilter(tab.id as typeof statusFilter)}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+              className={`flex min-h-9 items-center border px-2.5 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
                 statusFilter === tab.id
-                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
-                  : 'text-slate-400 hover:text-white'
+                  ? 'border-ink bg-ink text-canvas'
+                  : 'border-line bg-paper text-muted hover:text-ink'
               }`}
             >
               {tab.label}
@@ -265,307 +306,449 @@ export default function ScanHistory() {
         </div>
       </div>
 
-      {/* ── Scans Data Table ─────────────────────────────────────────────────── */}
-      {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-24 glass-card rounded-2xl border border-slate-800">
-          <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mb-3" />
-          <p className="text-xs text-slate-400 font-medium">Loading telemetry audit logs…</p>
+      {!user ? (
+        <EmptyState
+          icon={Lock}
+          title="Guest mode active"
+          description="Scan history is not stored or retrieved in guest mode. Sign in to persist security telemetry, view team scans, and track posture trends."
+          action={
+            <Button variant="primary" size="md" onClick={() => navigate('/auth')}>
+              Sign in / register
+            </Button>
+          }
+        />
+      ) : isLoading ? (
+        <div className="flex flex-col items-center justify-center gap-2.5 border border-line bg-paper py-20">
+          <Spinner size="md" label="" />
+          <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
+            Loading audit logs…
+          </p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-20 glass-card rounded-2xl border border-slate-800 p-8">
-          <History className="w-10 h-10 text-slate-600 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-white mb-1">No Matching Scans Found</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-            {search ? 'Try clearing your search query or changing filters.' : 'Launch a new scan to start tracking history.'}
-          </p>
-          {search && (
-            <button
-              onClick={() => { setSearch(''); setStatusFilter('all'); }}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold"
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon={History}
+          title={search ? 'No matching scans' : 'No scans recorded yet'}
+          description={
+            search
+              ? `No audit logs match "${search}". Try resetting your search filter.`
+              : 'Launch a new scan to start recording security posture history.'
+          }
+          action={
+            search ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setSearch('');
+                  setStatusFilter('all');
+                }}
+              >
+                Reset filters
+              </Button>
+            ) : (
+              <Button variant="primary" size="sm" onClick={() => navigate('/dashboard')}>
+                Launch live scan
+              </Button>
+            )
+          }
+        />
       ) : (
-        <div className="glass-card border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 uppercase tracking-wider text-[11px] font-semibold">
-                  <th className="w-12 px-4 py-3.5 text-center">Compare</th>
-                  <th className="px-4 py-3.5">Target Host &amp; Endpoint</th>
-                  <th className="px-4 py-3.5">Timestamp</th>
-                  <th className="px-4 py-3.5">Execution Status</th>
-                  <th className="px-4 py-3.5">Posture Score</th>
-                  <th className="px-4 py-3.5">Coverage</th>
-                  <th className="px-4 py-3.5">Highest Severity</th>
-                  <th className="px-4 py-3.5">Owner / Origin</th>
-                  <th className="w-16 px-4 py-3.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/50">
-                {filtered.map((s, idx) => {
-                  const isSelected = selectedIds.includes(s.id);
-                  return (
-                    <tr
-                      key={s.id}
-                      className={`transition-colors cursor-pointer ${
-                        isSelected
-                          ? 'bg-cyan-500/10 border-cyan-500/30'
-                          : idx % 2 === 0
-                          ? 'hover:bg-slate-800/40'
-                          : 'bg-slate-950/20 hover:bg-slate-800/40'
-                      }`}
-                      onClick={() => toggleSelect(s.id)}
-                    >
-                      <td className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(s.id)}
-                          className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500/20 cursor-pointer accent-cyan-500"
-                        />
-                      </td>
+        <>
+          <ul className="space-y-2.5 md:hidden" aria-label="Scan history cards">
+            {filtered.map((s) => {
+              const isSelected = selectedIds.includes(s.id);
+              return (
+                <li
+                  key={s.id}
+                  className={`border bg-paper p-3.5 transition-colors ${
+                    isSelected ? 'border-forest/50' : 'border-line'
+                  }`}
+                >
+                  <div className="mb-2.5 flex items-center justify-between gap-3">
+                    <label className="flex min-h-9 cursor-pointer items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(s.id)}
+                        aria-label={`Select ${s.hostname} for comparison`}
+                        className="h-4 w-4 accent-[var(--color-forest)]"
+                      />
+                      Compare
+                    </label>
+                    <ScoreBadge score={s.assessment_score} />
+                  </div>
 
-                      <td className="px-4 py-3.5">
-                        <p className="font-mono font-bold text-white text-xs truncate max-w-xs">{s.hostname}</p>
-                        <p className="font-mono text-[11px] text-slate-400 truncate max-w-sm">{s.url}</p>
-                      </td>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/scan/${s.id}`)}
+                    className="block w-full rounded-[6px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                  >
+                    <p className="break-words font-mono text-[12.5px] font-semibold text-ink">
+                      {s.hostname}
+                    </p>
+                    <p className="mt-1 break-all font-mono text-[10.5px] text-muted">{s.url}</p>
+                  </button>
 
-                      <td className="px-4 py-3.5 text-slate-400 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="w-3 h-3 text-slate-500" />
-                          <span>{new Date(s.started_at).toLocaleDateString()}</span>
-                          <span className="text-slate-500 text-[10px]">
-                            {new Date(s.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                            s.status === 'completed'
-                              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-                              : s.status === 'failed'
-                              ? 'text-red-400 bg-red-500/10 border-red-500/20'
-                              : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${
-                            s.status === 'completed' ? 'bg-emerald-400' :
-                            s.status === 'failed' ? 'bg-red-400' : 'bg-amber-400'
-                          }`} />
-                          <span className="capitalize">{s.status}</span>
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3.5">
-                        <ScoreBadge score={s.assessment_score} />
-                      </td>
-
-                      <td className="px-4 py-3.5 text-slate-400 font-mono">
-                        {s.assessment_coverage !== undefined ? `${s.assessment_coverage.toFixed(0)}%` : '—'}
-                      </td>
-
-                      <td className="px-4 py-3.5">
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 border-t border-line pt-3">
+                    <div>
+                      <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                        Status
+                      </dt>
+                      <dd
+                        className={`mt-0.5 text-[11.5px] font-medium capitalize ${
+                          s.status === 'completed'
+                            ? 'text-safe'
+                            : s.status === 'failed'
+                              ? 'text-critical'
+                              : 'text-medium'
+                        }`}
+                      >
+                        {s.status}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                        Coverage
+                      </dt>
+                      <dd className="mt-0.5 font-mono text-[11.5px] tabular-nums text-ink">
+                        {coverageLabel(s.assessment_coverage)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                        Started
+                      </dt>
+                      <dd className="mt-0.5 font-mono text-[10.5px] text-ink">
+                        {parseApiTimestamp(s.started_at).toLocaleString([], {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                        Peak severity
+                      </dt>
+                      <dd className="mt-1">
                         {s.highest_severity ? (
-                          <span className={`capitalize severity-${s.highest_severity} px-2 py-0.5 rounded-full border text-[11px] font-semibold`}>
-                            {s.highest_severity}
-                          </span>
+                          <SeverityBadge severity={s.highest_severity} size="xs" />
                         ) : (
-                          <span className="text-slate-500 font-mono">—</span>
+                          <span className="text-[10.5px] text-muted">None</span>
                         )}
-                      </td>
+                      </dd>
+                    </div>
+                  </dl>
 
-                      <td className="px-4 py-3.5">
-                        {s.user_id && user && s.user_id === user.id ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                            <User className="w-2.5 h-2.5" />
-                            My Scan
-                          </span>
-                        ) : s.user_email ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/90 text-slate-300 border border-slate-700">
-                            <Users className="w-2.5 h-2.5 text-slate-500" />
-                            <span className="max-w-[100px] truncate">{s.user_email.split('@')[0]}</span>
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            Public / Guest
-                          </span>
-                        )}
-                      </td>
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-2.5">
+                    <span className="font-mono text-[9px] uppercase tracking-[0.1em] text-muted">
+                      {s.workspace_id ? 'Team scan' : 'Personal scan'}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => navigate(`/scan/${s.id}`)}
+                      rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+                    >
+                      Open report
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
 
-                      <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          onClick={() => navigate(`/scan/${s.id}`)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-400 hover:bg-slate-800 transition-colors cursor-pointer"
-                          title="Open full assessment"
-                        >
-                          <ArrowRight className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="aegis-panel hidden overflow-hidden md:block">
+            <div className="overflow-x-auto">
+              <table className="aegis-table w-full text-left">
+                <caption className="sr-only">
+                  Scan history. Select rows to compare two scans.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className="w-12 px-3 text-center">
+                      <span className="sr-only">Compare</span>
+                    </th>
+                    <th scope="col">Target</th>
+                    <th scope="col">Timestamp</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Coverage</th>
+                    <th scope="col">Peak</th>
+                    <th scope="col">Scope</th>
+                    <th scope="col" className="text-right">
+                      <span className="sr-only">Open</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((s) => {
+                    const isSelected = selectedIds.includes(s.id);
+                    return (
+                      <tr
+                        key={s.id}
+                        tabIndex={0}
+                        aria-selected={isSelected}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleSelect(s.id);
+                          }
+                        }}
+                        className={`cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
+                          isSelected ? 'bg-forest/6' : 'hover:bg-canvas'
+                        }`}
+                        onClick={() => toggleSelect(s.id)}
+                      >
+                        <td className="px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelect(s.id)}
+                            aria-label={`Select ${s.hostname} for comparison`}
+                            className="h-4 w-4 accent-[var(--color-forest)]"
+                          />
+                        </td>
+
+                        <td>
+                          <p className="max-w-[220px] truncate font-mono text-[11.5px] font-medium text-ink">
+                            {s.hostname}
+                          </p>
+                          <p className="max-w-[260px] truncate font-mono text-[10px] text-muted">
+                            {s.url}
+                          </p>
+                        </td>
+
+                        <td className="whitespace-nowrap">
+                          <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-muted">
+                            <Clock className="h-3 w-3" aria-hidden="true" />
+                            <span>{parseApiTimestamp(s.started_at).toLocaleDateString()}</span>
+                            <span className="tabular-nums text-muted">
+                              {parseApiTimestamp(s.started_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </span>
+                        </td>
+
+                        <td>
+                          <span
+                            className={`inline-flex items-center gap-1.5 border px-1.5 py-1 font-mono text-[9.5px] uppercase tracking-[0.06em] ${
+                              s.status === 'completed'
+                                ? 'border-safe/30 bg-safe/10 text-safe'
+                                : s.status === 'failed'
+                                  ? 'border-critical/30 bg-critical/10 text-critical'
+                                  : 'border-medium/30 bg-medium/10 text-medium'
+                            }`}
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 ${
+                                s.status === 'completed'
+                                  ? 'bg-safe'
+                                  : s.status === 'failed'
+                                    ? 'bg-critical'
+                                    : 'bg-medium'
+                              }`}
+                              aria-hidden="true"
+                            />
+                            {s.status}
+                          </span>
+                        </td>
+
+                        <td>
+                          <ScoreBadge score={s.assessment_score} />
+                        </td>
+
+                        <td className="font-mono text-[10.5px] tabular-nums text-muted">
+                          {coverageLabel(s.assessment_coverage)}
+                        </td>
+
+                        <td>
+                          {s.highest_severity ? (
+                            <SeverityBadge severity={s.highest_severity} size="xs" />
+                          ) : (
+                            <span className="font-mono text-[10.5px] text-muted">—</span>
+                          )}
+                        </td>
+
+                        <td>
+                          {s.workspace_id ? (
+                            <span className="inline-flex items-center gap-1 border border-line bg-elevated px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-muted">
+                              <Users className="h-2.5 w-2.5" aria-hidden="true" />
+                              Team
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 border border-forest/30 bg-forest/8 px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] text-forest">
+                              <User className="h-2.5 w-2.5" aria-hidden="true" />
+                              Personal
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => navigate(`/scan/${s.id}`)}
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                            aria-label={`Open assessment for ${s.hostname}`}
+                            title="Open full assessment"
+                          >
+                            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── Sticky Comparison Floating Toolbar ───────────────────────────────── */}
-      {selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-xl px-4 animate-float">
-          <div className="glass-card border border-cyan-500/40 bg-slate-950/90 backdrop-blur-xl p-4 rounded-2xl shadow-2xl shadow-cyan-950/80 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-cyan-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                <GitCompare className="w-4 h-4" />
-              </div>
+      {selectedIds.length > 0 ? (
+        <div className="fixed bottom-20 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 px-1 lg:bottom-6">
+          <div className="aegis-reveal flex flex-col items-stretch justify-between gap-3 border border-line-strong bg-paper p-3 shadow-[var(--shadow-overlay)] sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-forest/30 bg-forest/10 text-forest">
+                <GitCompare className="h-4 w-4" aria-hidden="true" />
+              </span>
               <div>
-                <p className="text-xs font-bold text-white">
-                  {selectedIds.length}/2 Scans Selected
+                <p className="font-mono text-[10px] uppercase tracking-[0.1em] text-ink">
+                  {selectedIds.length}/2 scans selected
                 </p>
-                <p className="text-[11px] text-slate-400">
-                  {selectedIds.length === 1 ? 'Select one more scan to run comparison' : 'Ready to analyze posture deltas'}
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {selectedIds.length === 1
+                    ? 'Select one more to compare'
+                    : 'Ready to calculate posture delta'}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setSelectedIds([])}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors"
-              >
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])}>
                 Clear
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={handleCompare}
                 disabled={selectedIds.length !== 2 || isComparing}
-                className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-md shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                isLoading={isComparing}
+                leftIcon={<GitCompare className="h-3.5 w-3.5" />}
               >
-                {isComparing ? (
-                  <>
-                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Analyzing…
-                  </>
-                ) : (
-                  <>
-                    <GitCompare className="w-3.5 h-3.5" />
-                    Compare Scans
-                  </>
-                )}
-              </button>
+                Compare
+              </Button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {/* ── Comparison Results Panel ─────────────────────────────────────────── */}
-      {comparison && (
-        <div className="glass-card border border-cyan-500/30 rounded-2xl p-6 sm:p-8 space-y-6 fade-in shadow-xl">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
-                <GitCompare className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-white">Posture Delta Analysis</h2>
-                <p className="text-xs text-slate-400">
-                  Comparing Baseline ({comparison.scan_a?.id.slice(0, 8) ?? 'A'}…) vs Target ({comparison.scan_b?.id.slice(0, 8) ?? 'B'}…)
+      {comparison ? (
+        <section
+          className="aegis-reveal aegis-panel mt-4"
+          aria-label="Posture delta analysis"
+        >
+          <div className="aegis-panel-head">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-canvas text-forest">
+                <GitCompare className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="aegis-eyebrow">Comparison / delta</p>
+                <h2 className="mt-1 font-display text-[15px] font-semibold tracking-tight text-ink">
+                  Posture delta analysis
+                </h2>
+                <p className="mt-0.5 truncate font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+                  Baseline {comparison.scan_a?.id.slice(0, 8) ?? 'A'} → target{' '}
+                  {comparison.scan_b?.id.slice(0, 8) ?? 'B'}
                 </p>
               </div>
             </div>
             <button
               onClick={() => setComparison(null)}
-              className="text-slate-500 hover:text-slate-300 p-1.5 rounded-lg hover:bg-slate-800"
+              aria-label="Dismiss comparison"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-canvas hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
             >
-              <X className="w-4 h-4" />
+              <X className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
-          {/* Delta KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1 block">
-                Score Differential
-              </span>
-              <div className="text-xl font-extrabold">
+          <dl className="grid gap-px border-b border-line bg-line sm:grid-cols-3">
+            <div className="bg-canvas px-4 py-3.5">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Score differential
+              </dt>
+              <dd className="mt-1.5 font-mono text-[18px] font-semibold tabular-nums">
                 <ScoreChange change={comparison.score_change} />
-              </div>
+              </dd>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1 block">
-                Coverage Differential
-              </span>
-              <div className="text-xl font-extrabold">
+            <div className="bg-canvas px-4 py-3.5">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Coverage differential
+              </dt>
+              <dd className="mt-1.5 font-mono text-[18px] font-semibold tabular-nums">
                 <ScoreChange change={comparison.coverage_change} />
-              </div>
+              </dd>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1 block">
-                Latency Variance
-              </span>
-              <div className="text-xl font-extrabold font-mono text-cyan-400">
+            <div className="bg-canvas px-4 py-3.5">
+              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+                Latency variance
+              </dt>
+              <dd className="mt-1.5 font-mono text-[18px] font-semibold tabular-nums text-forest">
                 {comparison.latency_change_ms !== undefined && comparison.latency_change_ms !== null
                   ? `${comparison.latency_change_ms > 0 ? '+' : ''}${comparison.latency_change_ms.toFixed(0)}ms`
                   : '—'}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="grid gap-px bg-line md:grid-cols-2">
+            <div className="border-l-2 border-l-critical bg-paper px-4 py-3.5">
+              <div className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-critical">
+                <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                New vulnerabilities
+                <span className="tabular-nums text-muted">({newFindings.length})</span>
               </div>
+              {newFindings.length === 0 ? (
+                <p className="mt-1.5 text-[11.5px] text-muted">Zero new regressions introduced.</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {newFindings.map((f, i) => (
+                    <li key={i} className="flex items-start gap-1.5 font-mono text-[10.5px] text-muted">
+                      <span className="mt-[6px] h-1 w-1 shrink-0 bg-critical" aria-hidden="true" />
+                      <span>{f.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="border-l-2 border-l-safe bg-paper px-4 py-3.5">
+              <div className="flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-safe">
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Remediated
+                <span className="tabular-nums text-muted">({resolvedFindings.length})</span>
+              </div>
+              {resolvedFindings.length === 0 ? (
+                <p className="mt-1.5 text-[11.5px] text-muted">No previous findings resolved.</p>
+              ) : (
+                <ul className="mt-2 space-y-1.5">
+                  {resolvedFindings.map((f, i) => (
+                    <li key={i} className="flex items-start gap-1.5 font-mono text-[10.5px] text-muted">
+                      <span className="mt-[6px] h-1 w-1 shrink-0 bg-safe" aria-hidden="true" />
+                      <span>{f.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
-
-          {/* Findings Diff Breakdown */}
-          {(() => {
-            const newFindings = comparison.finding_changes?.filter((f) => f.status === 'new') ?? [];
-            const resolvedFindings = comparison.finding_changes?.filter((f) => f.status === 'not_detected') ?? [];
-
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-red-950/20 border border-red-500/20">
-                  <div className="flex items-center gap-2 text-red-400 text-xs font-bold uppercase mb-2">
-                    <XCircle className="w-4 h-4" />
-                    New Vulnerabilities Disclosed ({newFindings.length})
-                  </div>
-                  {newFindings.length === 0 ? (
-                    <p className="text-xs text-slate-500">Zero new regressions introduced.</p>
-                  ) : (
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      {newFindings.map((f, i) => (
-                        <li key={i} className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-                          <span>{f.title}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase mb-2">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Remediated Findings ({resolvedFindings.length})
-                  </div>
-                  {resolvedFindings.length === 0 ? (
-                    <p className="text-xs text-slate-500">No previous findings resolved.</p>
-                  ) : (
-                    <ul className="space-y-1.5 text-xs text-slate-300">
-                      {resolvedFindings.map((f, i) => (
-                        <li key={i} className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          <span>{f.title}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
+        </section>
+      ) : null}
     </div>
   );
 }

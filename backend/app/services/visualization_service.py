@@ -450,7 +450,12 @@ def build_flow_graph(
         reputation_check_status = "skipped"
 
     rep_evidence = reputation_result.evidence if reputation_result else {}
-    provider = "VirusTotal" if settings.virustotal_enabled else "Not configured"
+    active_providers = []
+    if settings.virustotal_enabled:
+        active_providers.append("VirusTotal")
+    if settings.safe_browsing_enabled:
+        active_providers.append("Google Safe Browsing")
+    provider = ", ".join(active_providers) if active_providers else "Not configured"
 
     add_node("n-check-reputation", "Domain Reputation", "security_check", {
         "stage": "check_reputation",

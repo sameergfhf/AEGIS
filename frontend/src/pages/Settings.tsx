@@ -1,8 +1,7 @@
 // src/pages/Settings.tsx — Configuration, diagnostics, and security posture page
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
-  Settings as SettingsIcon,
   Shield,
   Database,
   Activity,
@@ -11,14 +10,17 @@ import {
   Check,
   RefreshCw,
   Lock,
-  Cpu,
   Radio,
   FileCode,
   AlertTriangle,
-  Zap
+  Zap,
+  Search,
+  Terminal,
+  ShieldCheck,
 } from 'lucide-react';
 import { getHealth } from '../services/api';
 import type { HealthStatus } from '../types';
+import { Button, Badge } from '../components/ui';
 
 interface EnvVarDoc {
   key: string;
@@ -35,7 +37,8 @@ const ENV_VARIABLES: EnvVarDoc[] = [
     label: 'VirusTotal Intelligence Key',
     defaultVal: '(Not set by default)',
     category: 'Threat Intel',
-    description: 'Enables real-time domain and URL reputation scans against 70+ antivirus engines. Free tier grants 4 req/min.',
+    description:
+      'Enables real-time domain and URL reputation scans against 70+ antivirus engines. Free tier grants 4 req/min.',
     link: 'https://www.virustotal.com/gui/join-us',
   },
   {
@@ -43,37 +46,75 @@ const ENV_VARIABLES: EnvVarDoc[] = [
     label: 'Latency Measurement Samples',
     defaultVal: '5',
     category: 'Performance',
-    description: 'Number of consecutive non-blocking requests dispatched to calculate min, mean, max, and jitter metrics.',
+    description:
+      'Number of consecutive non-blocking requests dispatched to calculate min, mean, max, and jitter metrics.',
   },
   {
     key: 'MAX_RESPONSE_BYTES',
     label: 'Max Ingestion Payload Size',
     defaultVal: '524288 (512 KB)',
     category: 'Security',
-    description: 'Absolute upper boundary for payload inspection. Prevents memory exhaustion attacks and large binary downloads.',
+    description:
+      'Absolute upper boundary for payload inspection. Prevents memory exhaustion attacks and large binary downloads.',
   },
   {
     key: 'REQUEST_TIMEOUT_SECONDS',
     label: 'Per-Request HTTP Timeout',
     defaultVal: '15',
     category: 'Performance',
-    description: 'Hard threshold before hanging probes or slowloris-type endpoints are terminated.',
+    description:
+      'Hard threshold before hanging probes or slowloris-type endpoints are terminated.',
   },
   {
     key: 'SCAN_RATE_LIMIT_PER_MINUTE',
     label: 'Global Scan Rate Limiter',
     defaultVal: '20',
     category: 'Performance',
-    description: 'Enforces fairness per client IP to safeguard both scanner compute and target web services.',
+    description:
+      'Enforces fairness per client IP to safeguard both scanner compute and target web services.',
   },
   {
     key: 'REPORT_RETENTION_DAYS',
     label: 'Historical Log Retention',
     defaultVal: '30',
     category: 'Security',
-    description: 'Days before historical audit traces and temporary artifacts are cycled from local storage.',
+    description:
+      'Days before historical audit traces and temporary artifacts are cycled from local storage.',
   },
 ];
+
+const GUARDRAILS = [
+  {
+    icon: Shield,
+    title: 'SSRF & private network isolation',
+    desc: 'Strictly blocks RFC1918 loopback (127.0.0.1), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), link-local, and cloud metadata addresses (169.254.169.254). Only public HTTP/HTTPS is allowed.',
+    badge: 'RFC 1918 / 3927',
+    tone: 'border-safe/30 bg-safe/10 text-safe',
+  },
+  {
+    icon: Lock,
+    title: 'Automated credential redaction',
+    desc: 'All analyzed HTTP request and response payloads pass through regex secret scrubbers. JWTs, Bearer tokens, AWS access keys, and Stripe secrets are sanitised before DB persistence.',
+    badge: 'Zero persistence',
+    tone: 'border-forest/30 bg-forest/8 text-forest',
+  },
+  {
+    icon: Zap,
+    title: 'Memory bomb & resource throttling',
+    desc: 'Maximum response body size is hard-capped at 512 KB with bounded decompression to neutralise gzip/brotli expansion bombs and prevent memory bloat.',
+    badge: '512 KB guard',
+    tone: 'border-high/30 bg-high/10 text-high',
+  },
+  {
+    icon: FileCode,
+    title: 'Hardened YAML & spec parser',
+    desc: 'OpenAPI 3.0 and Swagger 2.0 definitions are ingested using strict schema sanitisation and SafeLoader, eliminating remote code execution via malicious serialised objects.',
+    badge: 'SafeLoader',
+    tone: 'border-info/30 bg-info/10 text-info',
+  },
+];
+
+const CATEGORIES = ['ALL', 'Security', 'Performance', 'Threat Intel'] as const;
 
 export default function Settings() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -81,6 +122,9 @@ export default function Settings() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] =
+    useState<'ALL' | 'Security' | 'Performance' | 'Threat Intel'>('ALL');
 
   const fetchHealth = async (isManual = false) => {
     if (isManual) setIsRefreshing(true);
@@ -109,342 +153,450 @@ export default function Settings() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const filteredEnvVars = useMemo(() => {
+    return ENV_VARIABLES.filter((item) => {
+      const matchesCategory = selectedCategory === 'ALL' || item.category === selectedCategory;
+      const matchesQuery =
+        !searchQuery ||
+        item.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesCategory && matchesQuery;
+    });
+  }, [selectedCategory, searchQuery]);
+
+  const coreOk = health?.status === 'ok';
+  const vtConfigured = health?.virustotal === 'configured';
+
+  const services: Array<{
+    name: string;
+    detail: string;
+    icon: typeof Activity;
+    healthy: boolean;
+    neutral?: boolean;
+    statusLabel: string;
+    rows: Array<{ label: string; value: string; accent?: boolean; safe?: boolean }>;
+  }> = [
+    {
+      name: 'AEGIS core engine',
+      detail: 'FastAPI asynchronous gateway',
+      icon: Activity,
+      healthy: coreOk,
+      statusLabel: coreOk ? 'Healthy' : 'Degraded',
+      rows: [
+        { label: 'Binding port', value: '127.0.0.1:8000' },
+        { label: 'Version', value: `v${health?.version || '1.0.0'}`, accent: true },
+        { label: 'Worker', value: 'Uvicorn asyncio' },
+      ],
+    },
+    {
+      name: 'Cloud telemetry store',
+      detail: 'PostgreSQL + realtime RLS',
+      icon: Database,
+      healthy: true,
+      statusLabel: 'Connected',
+      rows: [
+        { label: 'Tables', value: 'scans, findings, profiles' },
+        { label: 'Bucket', value: 'aegis-storage', safe: true },
+        { label: 'Isolation', value: 'Row level security', safe: true },
+      ],
+    },
+    {
+      name: 'Threat intelligence',
+      detail: 'VirusTotal v3 feeds',
+      icon: Radio,
+      healthy: vtConfigured,
+      neutral: !vtConfigured,
+      statusLabel: vtConfigured ? 'Active' : 'Optional · no key',
+      rows: [
+        { label: 'Engine quota', value: '4 req / min free' },
+        { label: 'Threat feed', value: '70+ antivirus engines' },
+        { label: 'Fallback', value: 'DNS & domain heuristics' },
+      ],
+    },
+  ];
+
   return (
-    <div className="min-h-screen px-4 md:px-8 py-8 max-w-6xl mx-auto space-y-8 animate-fade-in">
-      {/* Top Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-slate-800/80">
-        <div>
-          <div className="flex items-center gap-3 mb-1.5">
-            <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 shadow-lg shadow-cyan-500/10">
-              <SettingsIcon className="w-5 h-5" />
-            </div>
-            <h1 className="text-2xl font-bold text-white tracking-tight">System Settings & Infrastructure</h1>
+    <div className="aegis-container aegis-reveal pb-16 pt-6 page-settings">
+      <header className="aegis-page-header">
+        <div className="min-w-0">
+          <p className="aegis-eyebrow">System / configuration</p>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="aegis-page-title">Settings &amp; infrastructure</h1>
+            <Badge variant="neutral" size="xs">
+              v{health?.version || '1.0.0'}
+            </Badge>
           </div>
-          <p className="text-sm text-slate-400">
-            Audit runtime engines, configure environment variables, and review scanner security controls.
+          <p className="aegis-lede mt-3">
+            Audit runtime engines, review environment configuration, and verify the zero-trust
+            controls applied to every probe.
           </p>
         </div>
 
-        {/* Live Diagnostics Pulse Badge */}
-        <div className="flex items-center gap-3 self-start md:self-center">
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs shadow-inner">
-            <span className="relative flex h-2 w-2">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                health?.status === 'ok' ? 'bg-emerald-400' : 'bg-red-400'
-              }`} />
-              <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                health?.status === 'ok' ? 'bg-emerald-500' : 'bg-red-500'
-              }`} />
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="flex min-h-9 flex-1 items-center gap-2 border border-line bg-paper px-2.5 sm:flex-initial">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 ${
+                isLoading ? 'bg-medium' : coreOk ? 'aegis-live-dot' : 'bg-critical'
+              }`}
+              aria-hidden="true"
+            />
+            <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+              {isLoading
+                ? 'Pinging core…'
+                : coreOk
+                  ? 'Core operational'
+                  : 'Core unreachable'}
             </span>
-            <span className="text-slate-300 font-medium">
-              {isLoading ? 'Pinging Core...' : health?.status === 'ok' ? 'Core Operational' : 'Core Unreachable'}
-            </span>
-            {latencyMs !== null && (
-              <span className="text-cyan-400/80 font-mono text-[11px] border-l border-slate-700/60 pl-2">
+            {latencyMs !== null ? (
+              <span className="border-l border-line pl-2 font-mono text-[9.5px] tabular-nums text-forest">
                 {latencyMs}ms
               </span>
-            )}
+            ) : null}
           </div>
 
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fetchHealth(true)}
             disabled={isRefreshing || isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-700/60 text-slate-300 hover:text-white border border-slate-700/50 text-xs font-medium transition-all disabled:opacity-50"
-            title="Refresh Core Diagnostics"
+            icon={<RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>Re-ping</span>
-          </button>
+            Re-ping
+          </Button>
         </div>
-      </div>
+      </header>
 
-      {/* ── Section 1: Core Service Health & Diagnostics ────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <Cpu className="w-4 h-4 text-cyan-400" />
-          <span>Core Telemetry & Runtime Microservices</span>
+      <nav className="settings-section-nav" aria-label="Settings sections">
+        <a href="#settings-runtime">Service health</a>
+        <a href="#settings-guardrails">Security controls</a>
+        <a href="#settings-environment">Configuration</a>
+      </nav>
+
+      <section id="settings-runtime" aria-labelledby="runtime-heading" className="mt-8">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-line pb-2.5">
+          <div>
+            <p className="aegis-eyebrow">Runtime / services</p>
+            <h2
+              id="runtime-heading"
+              className="mt-1.5 font-display text-[16px] font-semibold tracking-tight text-ink"
+            >
+              Core telemetry &amp; microservices
+            </h2>
+          </div>
+          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted">
+            Autonomous probing engine
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Node 1: FastAPI Core */}
-          <div className="glass-card glow-card-hover p-5 border border-slate-700/60 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                  <Activity className="w-4 h-4" />
+        <div className="grid gap-3 md:grid-cols-3">
+          {services.map((service) => {
+            const Icon = service.icon;
+            return (
+              <article key={service.name} className="aegis-panel flex flex-col">
+                <div className="flex items-start justify-between gap-2 border-b border-line px-4 py-3">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center border ${
+                        service.neutral
+                          ? 'border-high/30 bg-high/10 text-high'
+                          : service.healthy
+                            ? 'border-safe/30 bg-safe/10 text-safe'
+                            : 'border-critical/30 bg-critical/10 text-critical'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-display text-[13px] font-semibold text-ink">
+                        {service.name}
+                      </h3>
+                      <p className="truncate font-mono text-[9px] uppercase tracking-[0.08em] text-muted">
+                        {service.detail}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">API Sentinel Engine</h3>
-                  <p className="text-[11px] text-slate-400">FastAPI Asynchronous Gateway</p>
-                </div>
-              </div>
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                health?.status === 'ok'
-                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                  : 'text-red-400 bg-red-500/10 border-red-500/30'
-              }`}>
-                {health?.status === 'ok' ? 'HEALTHY' : 'DEGRADED'}
-              </span>
-            </div>
 
-            <div className="space-y-2 text-xs border-t border-slate-800/80 pt-3">
-              <div className="flex justify-between text-slate-400">
-                <span>Binding Port:</span>
-                <span className="font-mono text-slate-200">127.0.0.1:8000</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Version:</span>
-                <span className="font-mono text-cyan-400">v{health?.version || '1.0.0'}</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Engine Worker:</span>
-                <span className="text-slate-200">Uvicorn asyncio</span>
-              </div>
+                <div className="flex flex-1 flex-col justify-between gap-3 p-4">
+                  <span
+                    className={`inline-flex w-fit items-center gap-1.5 border px-1.5 py-1 font-mono text-[9px] uppercase tracking-[0.06em] ${
+                      service.neutral
+                        ? 'border-high/30 bg-high/10 text-high'
+                        : service.healthy
+                          ? 'border-safe/30 bg-safe/10 text-safe'
+                          : 'border-critical/30 bg-critical/10 text-critical'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 ${
+                        service.neutral ? 'bg-high' : service.healthy ? 'bg-safe' : 'bg-critical'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {service.statusLabel}
+                  </span>
+
+                  <dl className="space-y-1.5">
+                    {service.rows.map((row) => (
+                      <div
+                        key={row.label}
+                        className="flex items-center justify-between gap-2 font-mono text-[10px]"
+                      >
+                        <dt className="shrink-0 text-muted">{row.label}</dt>
+                        <dd
+                          className={`truncate text-right ${
+                            row.accent
+                              ? 'text-forest'
+                              : row.safe
+                                ? 'text-safe'
+                                : 'text-ink'
+                          }`}
+                          title={row.value}
+                        >
+                          {row.value}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <section id="settings-guardrails" aria-labelledby="guardrails-heading" className="aegis-panel mt-8">
+        <div className="aegis-panel-head">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <ShieldCheck className="h-4 w-4 text-safe" aria-hidden="true" />
+            <div>
+              <p className="aegis-eyebrow">Security / guardrails</p>
+              <h2
+                id="guardrails-heading"
+                className="mt-1 font-display text-[15px] font-semibold tracking-tight text-ink"
+              >
+                Zero-trust safeguards
+              </h2>
             </div>
           </div>
-
-          {/* Node 2: Supabase Cloud Database */}
-          <div className="glass-card glow-card-hover p-5 border border-slate-700/60 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                  <Database className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Supabase Cloud Database</h3>
-                  <p className="text-[11px] text-slate-400">PostgreSQL + Realtime RLS</p>
-                </div>
-              </div>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/30">
-                CONNECTED
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs border-t border-slate-800/80 pt-3">
-              <div className="flex justify-between text-slate-400">
-                <span>Tables:</span>
-                <span className="font-mono text-cyan-300">scans, findings, profiles, specs</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Storage Bucket:</span>
-                <span className="font-mono text-emerald-400">aegis-storage</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Data Isolation:</span>
-                <span className="text-emerald-400 font-medium">Row Level Security (RLS)</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Node 3: VirusTotal Intelligence Node */}
-          <div className="glass-card glow-card-hover p-5 border border-slate-700/60 rounded-2xl relative overflow-hidden flex flex-col justify-between">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                  <Radio className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-white">Threat Reputation</h3>
-                  <p className="text-[11px] text-slate-400">VirusTotal v3 Feeds</p>
-                </div>
-              </div>
-              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
-                health?.virustotal === 'configured'
-                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30'
-                  : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
-              }`}>
-                {health?.virustotal === 'configured' ? 'ACTIVE' : 'OPTIONAL (NO KEY)'}
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs border-t border-slate-800/80 pt-3">
-              <div className="flex justify-between text-slate-400">
-                <span>Engine Quota:</span>
-                <span className="font-mono text-slate-200">4 req/min free</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Threat Feed:</span>
-                <span className="text-slate-200">70+ Antivirus Engines</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Fallback Mode:</span>
-                <span className="text-slate-300">DNS & Domain Heuristics</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Section 2: Zero-Trust Security Controls (SSRF & Scanner Shields) ── */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          <Shield className="w-4 h-4 text-emerald-400" />
-          <span>Active Scanner Security Protections & Safeguards</span>
+          <Badge variant="outline" size="xs">
+            Always enforced
+          </Badge>
         </div>
 
-        <div className="glass-card p-6 border border-slate-800/90 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 space-y-4">
-          <p className="text-xs text-slate-400 leading-relaxed">
-            AEGIS implements strict multi-layer zero-trust guardrails to safeguard both host environments and target infrastructure from accidental disruption, request forgery, or credential leakage:
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {[
-              {
-                icon: Shield,
-                title: 'SSRF & Private Network Isolation',
-                desc: 'Strictly blocks RFC1918 loopback (127.0.0.1), private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16), link-local, and cloud metadata addresses (169.254.169.254). Only public HTTP/HTTPS is allowed.',
-                badge: 'RFC 1918 / RFC 3927'
-              },
-              {
-                icon: Lock,
-                title: 'Automated Credential Redaction',
-                desc: 'All analyzed HTTP request and response payloads pass through regex secret scrubbers. JWTs, Bearer tokens, AWS access keys, and Stripe secrets are sanitized before DB persistence.',
-                badge: 'Zero-Persistence'
-              },
-              {
-                icon: Zap,
-                title: 'Memory Bomb & Resource Throttling',
-                desc: 'Maximum response body size is hard-capped at 512 KB with bounded decompression to neutralize gzip/brotli expansion bombs and prevent memory bloat.',
-                badge: '512 KB Guard'
-              },
-              {
-                icon: FileCode,
-                title: 'Hardened YAML & Spec Parser',
-                desc: 'OpenAPI 3.0 and Swagger 2.0 definitions are ingested using strict schema sanitization and SafeLoader, eliminating remote code execution via malicious serialized objects.',
-                badge: 'SafeLoader'
-              },
-            ].map(({ icon: Icon, title, desc, badge }) => (
-              <div key={title} className="p-4 rounded-xl bg-slate-900/50 border border-slate-800/80 hover:border-slate-700/80 transition-all flex items-start gap-3.5">
-                <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 shrink-0 mt-0.5">
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-xs font-semibold text-white">{title}</h4>
-                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 shrink-0">
+        <div className="grid gap-px bg-line md:grid-cols-2">
+          {GUARDRAILS.map(({ icon: Icon, title, desc, badge, tone }) => (
+            <article key={title} className="bg-paper px-4 py-3.5">
+              <div className="flex items-start gap-3">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center border ${tone}`}>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <h3 className="text-[12.5px] font-semibold text-ink">{title}</h3>
+                    <span className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[8.5px] uppercase tracking-[0.06em] text-muted">
                       {badge}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">{desc}</p>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{desc}</p>
                 </div>
               </div>
-            ))}
-          </div>
+            </article>
+          ))}
         </div>
-      </div>
+      </section>
 
-      {/* ── Section 3: Environment Variables Vault & Reference ───────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            <Lock className="w-4 h-4 text-cyan-400" />
-            <span>Environment Variables & Engine Configuration</span>
+      <section id="settings-environment" aria-labelledby="env-heading" className="aegis-panel mt-4">
+        <div className="aegis-panel-head">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Lock className="h-4 w-4 text-forest" aria-hidden="true" />
+            <div>
+              <p className="aegis-eyebrow">Environment / reference</p>
+              <h2
+                id="env-heading"
+                className="mt-1 font-display text-[15px] font-semibold tracking-tight text-ink"
+              >
+                Engine configuration
+              </h2>
+            </div>
           </div>
-          <span className="text-xs text-slate-500">Configured in <code className="text-cyan-400">backend/.env</code></span>
+          <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted">
+            backend/.env
+          </span>
         </div>
 
-        <div className="glass-card p-6 border border-slate-800/90 rounded-2xl space-y-4">
-          <p className="text-xs text-slate-400 leading-relaxed">
-            All API Sentinel operational tuning and secret credentials reside exclusively on the server in <code className="text-cyan-400 font-mono">backend/.env</code>. Client browsers never receive access to raw keys.
+        <div className="space-y-4 p-4 sm:p-5">
+          <p className="max-w-3xl text-[11.5px] leading-relaxed text-muted">
+            All operational tuning and secret credentials reside exclusively on the server in{' '}
+            <code className="border border-line bg-canvas px-1 py-0.5 font-mono text-[10.5px] text-forest">
+              backend/.env
+            </code>
+            . Client browsers never receive access to raw keys.
           </p>
 
-          <div className="space-y-3">
-            {ENV_VARIABLES.map((v) => (
-              <div
-                key={v.key}
-                className="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition-all space-y-2 group"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <code className="text-xs font-mono font-bold text-cyan-300 bg-cyan-950/60 px-2 py-1 rounded border border-cyan-800/40">
+          <div className="flex flex-col justify-between gap-2.5 border-y border-line py-3 sm:flex-row sm:items-center">
+            <div
+              role="group"
+              aria-label="Filter variables by category"
+              className="flex flex-wrap items-center gap-1"
+            >
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  aria-pressed={selectedCategory === cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`flex min-h-9 items-center border px-2 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
+                    selectedCategory === cat
+                      ? 'border-ink bg-ink text-canvas'
+                      : 'border-line bg-paper text-muted hover:text-ink'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            <div className="aegis-input-shell w-full gap-2.5 px-3 sm:w-64">
+              <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+              <label htmlFor="env-search" className="sr-only">
+                Search environment variables
+              </label>
+              <input
+                id="env-search"
+                type="text"
+                placeholder="Search variables…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="min-h-10 w-full bg-transparent font-mono text-[11px] text-ink outline-none placeholder:text-muted"
+              />
+            </div>
+          </div>
+
+          <ul className="divide-y divide-line border border-line">
+            {filteredEnvVars.map((v) => (
+              <li key={v.key} className="group bg-paper px-3.5 py-3">
+                <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <code className="border border-line bg-canvas px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-forest">
                       {v.key}
                     </code>
                     <button
+                      type="button"
                       onClick={() => copyToClipboard(v.key)}
-                      className="p-1 rounded text-slate-500 hover:text-cyan-400 transition-colors opacity-70 group-hover:opacity-100"
+                      className="flex h-9 w-9 items-center justify-center rounded-[6px] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
                       title="Copy variable name"
+                      aria-label={`Copy ${v.key}`}
                     >
                       {copiedKey === v.key ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="h-3.5 w-3.5 text-safe" aria-hidden="true" />
                       ) : (
-                        <Copy className="w-3.5 h-3.5" />
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                       )}
                     </button>
-                    {v.link && (
+                    {v.link ? (
                       <a
                         href={v.link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-slate-500 hover:text-cyan-400 transition-colors"
-                        title="Get API Key"
+                        className="flex h-9 w-9 items-center justify-center rounded-[6px] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                        title="Get API key"
+                        aria-label={`Open documentation for ${v.key}`}
                       >
-                        <ExternalLink className="w-3.5 h-3.5" />
+                        <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                       </a>
-                    )}
+                    ) : null}
                   </div>
 
-                  <div className="flex items-center gap-2 self-start sm:self-center">
-                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
-                      v.category === 'Security'
-                        ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-                        : v.category === 'Threat Intel'
-                        ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
-                        : 'text-blue-400 bg-blue-500/10 border-blue-500/20'
-                    }`}>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <Badge
+                      variant={
+                        v.category === 'Security'
+                          ? 'success'
+                          : v.category === 'Threat Intel'
+                            ? 'high'
+                            : 'neutral'
+                      }
+                      size="xs"
+                    >
                       {v.category}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      Default: <code className="text-slate-300 font-mono text-[11px]">{v.defaultVal}</code>
+                    </Badge>
+                    <span className="font-mono text-[9.5px] uppercase tracking-[0.06em] text-muted">
+                      Default{' '}
+                      <code className="normal-case tracking-normal text-ink">{v.defaultVal}</code>
                     </span>
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-400 leading-relaxed pl-0.5">
-                  {v.description}
-                </p>
-              </div>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted">{v.description}</p>
+              </li>
             ))}
-          </div>
 
-          {/* Quick Setup Code Block */}
-          <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <h5 className="text-xs font-semibold text-blue-300">Quick Configuration Command</h5>
-              <p className="text-[11px] text-slate-400">
-                Initialize your local environment from the provided template:
+            {filteredEnvVars.length === 0 ? (
+              <li className="bg-paper px-6 py-8 text-center">
+                <Search className="mx-auto h-4 w-4 text-muted" aria-hidden="true" />
+                <p className="mt-2 text-[12px] font-medium text-ink">No matching variables</p>
+                <p className="mt-1 font-mono text-[10px] text-muted">
+                  {searchQuery
+                    ? `Nothing matches "${searchQuery}" in ${selectedCategory}.`
+                    : `No variables in ${selectedCategory}.`}
+                </p>
+              </li>
+            ) : null}
+          </ul>
+
+          <div className="flex flex-col justify-between gap-2.5 border border-line-strong bg-canvas px-3.5 py-3 sm:flex-row sm:items-center">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5 text-forest" aria-hidden="true" />
+                <h3 className="font-mono text-[9.5px] uppercase tracking-[0.1em] text-forest">
+                  Quick configuration
+                </h3>
+              </div>
+              <p className="mt-1 text-[11px] text-muted">
+                Initialise your local server environment from the production template.
               </p>
             </div>
-            <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-slate-800 font-mono text-xs text-cyan-400 shrink-0">
-              <code>cp backend/.env.example backend/.env</code>
+            <div className="flex shrink-0 items-center gap-1.5 border border-line bg-paper px-2.5 py-1.5 font-mono text-[10.5px] text-ink">
+              <code className="select-all">cp backend/.env.example backend/.env</code>
               <button
+                type="button"
                 onClick={() => copyToClipboard('cp backend/.env.example backend/.env')}
-                className="text-slate-400 hover:text-white"
+                className="flex h-8 w-8 items-center justify-center rounded-[6px] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
                 title="Copy shell command"
+                aria-label="Copy shell command"
               >
                 {copiedKey === 'cp backend/.env.example backend/.env' ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <Check className="h-3.5 w-3.5 text-safe" aria-hidden="true" />
                 ) : (
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                 )}
               </button>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* ── Section 4: Testing Scope & Legal Notice ─────────────────────────── */}
-      <div className="p-5 rounded-2xl border border-amber-500/20 bg-amber-500/5 flex items-start gap-3.5">
-        <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
-        <div className="space-y-1.5 text-xs text-slate-400 leading-relaxed">
-          <h4 className="text-xs font-semibold text-amber-300">Non-Intrusive Observable Signal Scope</h4>
-          <p>
-            API Sentinel performs non-intrusive black-box observation of publicly accessible HTTP/S endpoints (TLS certificates, HTTP response headers, information leakage fingerprints, and public reputation indices). It does <strong className="text-slate-200">not</strong> perform automated SQL injection, credential brute forcing, or state-altering exploits.
+      <aside className="mt-4 flex items-start gap-3 border border-high/30 bg-high/5 px-4 py-3.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-high" aria-hidden="true" />
+        <div className="space-y-1.5">
+          <h2 className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-high">
+            Non-intrusive observable signal scope
+          </h2>
+          <p className="text-[11px] leading-relaxed text-muted">
+            AEGIS performs non-intrusive black-box observation of publicly accessible HTTP/S
+            endpoints — TLS certificates, response headers, information leakage fingerprints, and
+            public reputation indices. It does <strong className="text-ink">not</strong> perform
+            automated SQL injection, credential brute forcing, or state-altering exploits.
           </p>
-          <p>
-            A high Security Assessment Score (SAS) indicates compliance with observable defensive standards but does not replace formal manual penetration testing or deep static code analysis.
+          <p className="text-[11px] leading-relaxed text-muted">
+            A high Security Assessment Score indicates compliance with observable defensive
+            standards but does not replace formal manual penetration testing or deep static code
+            analysis.
           </p>
         </div>
-      </div>
+      </aside>
     </div>
   );
 }

@@ -1,32 +1,17 @@
-// src/pages/AuthPage.tsx — Sign In / Sign Up page with Password, Email OTP & OAuth
-
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import {
-  Shield,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
-  ArrowRight,
-  Loader2,
-  KeyRound,
-  RotateCw,
-} from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, User, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import BrandLogo from '../components/BrandLogo';
+import { ThemeToggle } from '../components/ui';
 import toast from 'react-hot-toast';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 type AuthMode = 'signin' | 'signup';
-type InputMethod = 'password' | 'email-otp';
-type PasswordSignupPhase = 'credentials' | 'otp';
-type EmailOtpPhase = 'email' | 'otp';
 
-// ─── GitHub / Google SVG icons ────────────────────────────────────────────────
 function GitHubIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
       <path d="M12 2C6.477 2 2 6.484 2 12.021c0 4.428 2.865 8.185 6.839 9.504.5.092.682-.217.682-.483 0-.237-.009-.868-.013-1.703-2.782.605-3.369-1.342-3.369-1.342-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.004.07 1.532 1.032 1.532 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.111-4.555-4.944 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.748-1.025 2.748-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.337 4.687-4.565 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .268.18.58.688.482C19.138 20.203 22 16.447 22 12.021 22 6.484 17.523 2 12 2z" />
     </svg>
   );
@@ -34,7 +19,7 @@ function GitHubIcon() {
 
 function GoogleIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5">
+    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
@@ -43,65 +28,67 @@ function GoogleIcon() {
   );
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+const fieldClass =
+  'min-h-12 w-full rounded-[6px] border border-line-strong bg-paper py-3 text-[15px] text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-muted focus:border-forest focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--aegis-focus)_14%,transparent)]';
+const iconFieldClass = `${fieldClass} pl-11 pr-4`;
+const oauthClass =
+  'flex min-h-11 items-center justify-center gap-2.5 rounded-[6px] border border-line-strong bg-paper px-3 text-[12.5px] font-medium text-ink transition-colors hover:border-ink hover:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] disabled:cursor-not-allowed disabled:opacity-50';
+
 export default function AuthPage() {
   const [mode, setMode] = useState<AuthMode>('signin');
-  const [method, setMethod] = useState<InputMethod>('password');
-
-  // Password state
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [passwordSignupPhase, setPasswordSignupPhase] = useState<PasswordSignupPhase>('credentials');
-  const [signupOtp, setSignupOtp] = useState('');
-
-  // Email OTP state
-  const [emailOtpAddress, setEmailOtpAddress] = useState('');
-  const [emailOtpCode, setEmailOtpCode] = useState('');
-  const [emailOtpPhase, setEmailOtpPhase] = useState<EmailOtpPhase>('email');
-
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
 
   const { session } = useAuth();
   const navigate = useNavigate();
 
-  // If user already has a session (e.g. after OAuth callback), send them to the app
   useEffect(() => {
     if (session) navigate('/dashboard', { replace: true });
   }, [session, navigate]);
 
-  // ─── Reset ──────────────────────────────────────────────────────────────
+  // The auth screen is a fixed, single-viewport composition — never a scroll surface.
+  useEffect(() => {
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = 'hidden';
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   function resetState() {
+    setName('');
     setEmail('');
     setPassword('');
     setConfirmPassword('');
-    setPasswordSignupPhase('credentials');
-    setSignupOtp('');
-
-    setEmailOtpAddress('');
-    setEmailOtpCode('');
-    setEmailOtpPhase('email');
-
+    setShowPassword(false);
     setLoading(false);
-    setResending(false);
   }
 
   function toggleMode() {
-    setMode(m => (m === 'signin' ? 'signup' : 'signin'));
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
     resetState();
   }
 
-  // ─── Password: Submit (Sign In or Sign Up) ───────────────────────────────
-  async function handlePasswordSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!email || !password) return toast.error('Please fill in all fields.');
-    if (mode === 'signup' && password !== confirmPassword)
+    if (mode === 'signup' && !name.trim()) {
+      return toast.error('Please enter your full name.');
+    }
+    if (!email.trim() || !password) {
+      return toast.error('Please fill in all fields.');
+    }
+    if (mode === 'signup' && password !== confirmPassword) {
       return toast.error('Passwords do not match.');
-    if (password.length < 6)
+    }
+    if (password.length < 6) {
       return toast.error('Password must be at least 6 characters.');
+    }
 
     setLoading(true);
     try {
@@ -109,27 +96,20 @@ export default function AuthPage() {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
+          options: { data: { full_name: name.trim(), name: name.trim() } },
         });
-
         if (error) throw error;
-
-        // If email confirmation is disabled, user is immediately signed in
         if (data?.session) {
-          toast.success('Account created! Welcome to API Sentinel.');
+          toast.success('Account created. Welcome to AEGIS.');
           navigate('/dashboard', { replace: true });
           return;
         }
-
-        // Email confirmation is required — switch to OTP verification step
-        setPasswordSignupPhase('otp');
-        toast.success('Verification code sent to your email!');
+        toast.success('Account created. Check your email to confirm, then sign in.');
+        setMode('signin');
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
-        toast.success('Welcome back!');
+        toast.success('Welcome back.');
         navigate('/dashboard', { replace: true });
       }
     } catch (err: unknown) {
@@ -139,130 +119,6 @@ export default function AuthPage() {
     }
   }
 
-  // ─── Password Signup: Verify OTP ─────────────────────────────────────────
-  async function handleVerifySignupOtp(e: FormEvent) {
-    e.preventDefault();
-    if (signupOtp.length < 6) return toast.error('Please enter the 6-digit OTP code.');
-
-    setLoading(true);
-    try {
-      let res = await supabase.auth.verifyOtp({
-        email: email.trim(),
-        token: signupOtp.trim(),
-        type: 'signup',
-      });
-
-      if (res.error) {
-        const emailRes = await supabase.auth.verifyOtp({
-          email: email.trim(),
-          token: signupOtp.trim(),
-          type: 'email',
-        });
-        if (!emailRes.error) {
-          res = emailRes;
-        }
-      }
-
-      if (res.error) throw res.error;
-
-      if (res.data?.session) {
-        toast.success('Account verified! Welcome to API Sentinel.');
-        navigate('/dashboard', { replace: true });
-      } else {
-        toast.success('Email confirmed! You can now sign in with your password.');
-        setMode('signin');
-        setPasswordSignupPhase('credentials');
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Invalid OTP code.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Resend signup OTP
-  async function handleResendSignupOtp() {
-    if (!email) return;
-    setResending(true);
-    try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: email.trim(),
-      });
-      if (error) throw error;
-      toast.success('Verification code resent! Check your inbox.');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to resend code.');
-    } finally {
-      setResending(false);
-    }
-  }
-
-  // ─── Email OTP: Send ─────────────────────────────────────────────────────
-  async function handleSendEmailOtp(e: FormEvent) {
-    e.preventDefault();
-    if (!emailOtpAddress) return toast.error('Please enter an email address.');
-
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email: emailOtpAddress.trim(),
-        options: {
-          shouldCreateUser: true,
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-
-      if (error) throw error;
-
-      setEmailOtpPhase('otp');
-      toast.success(`OTP code sent to ${emailOtpAddress.trim()}!`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to send OTP.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ─── Email OTP: Verify ───────────────────────────────────────────────────
-  async function handleVerifyEmailOtp(e: FormEvent) {
-    e.preventDefault();
-    if (emailOtpCode.length < 6) return toast.error('Please enter the 6-digit OTP code.');
-
-    setLoading(true);
-    try {
-      let res = await supabase.auth.verifyOtp({
-        email: emailOtpAddress.trim(),
-        token: emailOtpCode.trim(),
-        type: 'email',
-      });
-
-      // If user is new, Supabase sends a signup confirmation token
-      if (res.error) {
-        const signupRes = await supabase.auth.verifyOtp({
-          email: emailOtpAddress.trim(),
-          token: emailOtpCode.trim(),
-          type: 'signup',
-        });
-        if (!signupRes.error) {
-          res = signupRes;
-        }
-      }
-
-      if (res.error) throw res.error;
-
-      if (res.data?.session) {
-        toast.success('Verified successfully! Welcome.');
-        navigate('/dashboard', { replace: true });
-      }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Invalid OTP code.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ─── OAuth ──────────────────────────────────────────────────────────────
   async function handleOAuth(provider: 'google' | 'github') {
     setOauthLoading(provider);
     try {
@@ -273,18 +129,10 @@ export default function AuthPage() {
           queryParams: provider === 'google' ? { access_type: 'offline', prompt: 'consent' } : {},
         },
       });
-
-      if (error) {
-        console.error(`[OAuth] ${provider} error:`, error);
-        throw error;
-      }
-
-      if (data?.url) {
-        window.location.href = data.url;
-      }
+      if (error) throw error;
+      if (data?.url) window.location.href = data.url;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : `${provider} sign-in failed.`;
-      console.error('[OAuth] caught:', msg);
       toast.error(msg, { duration: 6000 });
       setOauthLoading(null);
     }
@@ -292,376 +140,242 @@ export default function AuthPage() {
 
   const isSignUp = mode === 'signup';
 
-  // ─── Form 1: Password Form ──────────────────────────────────────────────
-  function renderPasswordForm() {
-    if (isSignUp && passwordSignupPhase === 'otp') {
-      return (
-        <form onSubmit={handleVerifySignupOtp} className="space-y-4 fade-in">
-          <div className="text-center space-y-1 mb-2">
-            <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto mb-2">
-              <KeyRound className="w-6 h-6 text-cyan-400" />
-            </div>
-            <h3 className="text-base font-semibold text-white">Enter Verification Code</h3>
-            <p className="text-xs text-slate-400">
-              We sent a 6-digit confirmation code to{' '}
-              <span className="text-cyan-400 font-medium">{email}</span>
-            </p>
-          </div>
-
-          <div className="relative">
-            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              id="auth-signup-otp-input"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="000000"
-              value={signupOtp}
-              onChange={e => setSignupOtp(e.target.value.replace(/\D/g, ''))}
-              required
-              className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all font-mono"
-            />
-          </div>
-
-          <button
-            id="auth-verify-signup-btn"
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg transition-all duration-200 disabled:opacity-60 shadow-lg shadow-cyan-500/20"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Confirm Account <ArrowRight className="w-4 h-4" /></>}
-          </button>
-
-          <div className="flex items-center justify-between text-xs pt-1">
-            <button
-              type="button"
-              onClick={handleResendSignupOtp}
-              disabled={resending}
-              className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors disabled:opacity-50"
-            >
-              <RotateCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
-              Resend code
-            </button>
-            <button
-              type="button"
-              onClick={() => { setPasswordSignupPhase('credentials'); setSignupOtp(''); }}
-              className="text-slate-400 hover:text-slate-300 transition-colors"
-            >
-              ← Edit email
-            </button>
-          </div>
-        </form>
-      );
-    }
-
-    return (
-      <form onSubmit={handlePasswordSubmit} className="space-y-4 fade-in">
-        {/* Email */}
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            id="auth-email"
-            type="email"
-            autoComplete="email"
-            placeholder="Email address"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-            className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all"
-          />
-        </div>
-
-        {/* Password */}
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            id="auth-password"
-            type={showPassword ? 'text' : 'password'}
-            autoComplete={isSignUp ? 'new-password' : 'current-password'}
-            placeholder="Password (min. 6 characters)"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-10 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword(v => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-          >
-            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-          </button>
-        </div>
-
-        {/* Confirm password (sign up only) */}
-        {isSignUp && (
-          <div className="relative">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              id="auth-confirm-password"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              placeholder="Confirm password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              required
-              className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all"
-            />
-          </div>
-        )}
-
-        <button
-          id="auth-password-submit-btn"
-          type="submit"
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg shadow-cyan-500/20"
-        >
-          {loading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <>
-              {isSignUp ? 'Create Account' : 'Sign In with Password'}
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
-      </form>
-    );
-  }
-
-  // ─── Form 2: Email OTP Form ─────────────────────────────────────────────
-  function renderEmailOtpForm() {
-    if (emailOtpPhase === 'otp') {
-      return (
-        <form onSubmit={handleVerifyEmailOtp} className="space-y-4 fade-in">
-          <div className="text-center space-y-1 mb-2">
-            <div className="w-12 h-12 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto mb-2">
-              <KeyRound className="w-6 h-6 text-cyan-400" />
-            </div>
-            <h3 className="text-base font-semibold text-white">Enter Email OTP</h3>
-            <p className="text-xs text-slate-400">
-              We sent a 6-digit code to{' '}
-              <span className="text-cyan-400 font-medium">{emailOtpAddress}</span>
-            </p>
-          </div>
-
-          <div className="relative">
-            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              id="auth-email-otp-input"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="000000"
-              value={emailOtpCode}
-              onChange={e => setEmailOtpCode(e.target.value.replace(/\D/g, ''))}
-              required
-              className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 tracking-widest text-center focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all font-mono"
-            />
-          </div>
-
-          <button
-            id="auth-verify-email-otp-btn"
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg transition-all duration-200 disabled:opacity-60 shadow-lg shadow-cyan-500/20"
-          >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify &amp; Sign In <ArrowRight className="w-4 h-4" /></>}
-          </button>
-
-          <div className="flex items-center justify-between text-xs pt-1">
-            <button
-              type="button"
-              onClick={handleSendEmailOtp}
-              disabled={loading}
-              className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 transition-colors"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              Resend OTP
-            </button>
-            <button
-              type="button"
-              onClick={() => { setEmailOtpPhase('email'); setEmailOtpCode(''); }}
-              className="text-slate-400 hover:text-slate-300 transition-colors"
-            >
-              ← Change email
-            </button>
-          </div>
-        </form>
-      );
-    }
-
-    return (
-      <form onSubmit={handleSendEmailOtp} className="space-y-4 fade-in">
-        <p className="text-xs text-slate-400 text-center">
-          Enter your email and we'll send a 6-digit one-time code to sign in instantly without a password.
-        </p>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            id="auth-email-otp-email"
-            type="email"
-            autoComplete="email"
-            placeholder="Enter your email"
-            value={emailOtpAddress}
-            onChange={e => setEmailOtpAddress(e.target.value)}
-            required
-            className="w-full bg-slate-800/60 border border-slate-700/60 rounded-lg pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition-all"
-          />
-        </div>
-
-        <button
-          id="auth-send-email-otp-btn"
-          type="submit"
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg transition-all duration-200 disabled:opacity-60 shadow-lg shadow-cyan-500/20"
-        >
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Send One-Time Code <ArrowRight className="w-4 h-4" /></>}
-        </button>
-      </form>
-    );
-  }
-
-  // ─── Main render ─────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Ambient background glows */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/3 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-blue-600/5 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-0 w-64 h-64 bg-violet-600/4 rounded-full blur-3xl" />
-        <div
-          className="absolute inset-0 opacity-[0.025]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(6,182,212,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.4) 1px, transparent 1px)',
-            backgroundSize: '40px 40px',
-          }}
-        />
-      </div>
+    <div className="flex h-[100dvh] overflow-hidden bg-canvas lg:grid lg:grid-cols-[1.02fr_1fr] page-auth">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
 
-      <div className="w-full max-w-md relative">
-        {/* Back to Home Link */}
-        <div className="mb-4">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-cyan-400 transition-colors">
-            ← Back to Homepage
-          </Link>
+      <aside className="aegis-invert relative hidden overflow-hidden p-10 lg:flex lg:flex-col xl:p-14">
+        <div className="aegis-glow pointer-events-none absolute inset-0 opacity-70" aria-hidden="true" />
+        <div className="aegis-grid-bg pointer-events-none absolute inset-0 opacity-[0.14]" aria-hidden="true" />
+        <div className="relative z-10">
+          <BrandLogo to="/" size="md" subtitle="Operator console" inverted />
         </div>
 
-        {/* Header / Branding */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 mb-4 shadow-lg shadow-cyan-500/30">
-            <Shield className="w-7 h-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">API Sentinel</h1>
-          <p className="text-sm text-slate-400 mt-1">Security Scanner &amp; Behavior Visualizer</p>
-        </div>
-
-        {/* Card */}
-        <div className="glass-card p-8 glow-cyan">
-          {/* Mode heading */}
-          <h2 className="text-xl font-semibold text-white mb-1">
-            {isSignUp ? 'Create your account' : 'Welcome back'}
-          </h2>
-          <p className="text-sm text-slate-400 mb-6">
-            {isSignUp
-              ? 'Join API Sentinel to start scanning.'
-              : 'Sign in to your API Sentinel account.'}
+        <div className="relative z-10 my-auto max-w-[30rem] py-[clamp(1rem,5vh,3rem)]">
+          <p className="aegis-eyebrow">Restricted workspace</p>
+          <h1 className="mt-[clamp(1rem,3vh,1.5rem)] font-display text-[clamp(1.8rem,min(4vw,4.6vh),3.6rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-ink">
+            Every scan is a record.
+            <br />
+            Every record is evidence.
+          </h1>
+          <p className="mt-[clamp(0.75rem,2.4vh,1.5rem)] max-w-[42ch] text-[14px] leading-relaxed text-muted">
+            Sign in to run probes, keep an auditable history, and coordinate remediation with your team.
           </p>
 
-          {/* OAuth buttons */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <button
-              id="auth-google-btn"
-              onClick={() => handleOAuth('google')}
-              disabled={oauthLoading !== null}
-              className="flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 hover:border-slate-600/60 text-white text-sm font-medium py-2.5 rounded-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {oauthLoading === 'google' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <GoogleIcon />
-              )}
-              Google
-            </button>
-            <button
-              id="auth-github-btn"
-              onClick={() => handleOAuth('github')}
-              disabled={oauthLoading !== null}
-              className="flex items-center justify-center gap-2 bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 hover:border-slate-600/60 text-white text-sm font-medium py-2.5 rounded-lg transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {oauthLoading === 'github' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <GitHubIcon />
-              )}
-              GitHub
-            </button>
-          </div>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3 mb-6">
-            <div className="flex-1 h-px bg-slate-700/60" />
-            <span className="text-xs text-slate-500">or continue with</span>
-            <div className="flex-1 h-px bg-slate-700/60" />
-          </div>
-
-          {/* Method toggle: Password vs Email OTP */}
-          <div className="grid grid-cols-2 bg-slate-800/60 rounded-lg p-1 mb-6 border border-slate-700/40 gap-1">
-            <button
-              id="auth-method-password"
-              type="button"
-              onClick={() => { setMethod('password'); resetState(); }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                method === 'password'
-                  ? 'bg-slate-700/90 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <Lock className="w-4 h-4 text-cyan-400" />
-              Password
-            </button>
-            <button
-              id="auth-method-email-otp"
-              type="button"
-              onClick={() => { setMethod('email-otp'); resetState(); }}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-md text-sm font-medium transition-all duration-200 ${
-                method === 'email-otp'
-                  ? 'bg-slate-700/90 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-300'
-              }`}
-            >
-              <Mail className="w-4 h-4 text-cyan-400" />
-              Email OTP
-            </button>
-          </div>
-
-          {/* Form area */}
-          {method === 'password' && renderPasswordForm()}
-          {method === 'email-otp' && renderEmailOtpForm()}
-
-          {/* Mode switch */}
-          {passwordSignupPhase !== 'otp' && emailOtpPhase !== 'otp' && (
-            <p className="text-sm text-slate-400 text-center mt-6">
-              {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-              <button
-                id="auth-mode-toggle"
-                onClick={toggleMode}
-                className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
-              >
-                {isSignUp ? 'Sign In' : 'Sign Up'}
-              </button>
-            </p>
-          )}
+          <dl className="mt-[clamp(1.25rem,4vh,2.5rem)] hidden border-t border-line [@media(min-height:760px)]:block">
+            {[
+              { n: '01', label: 'Non-destructive probes', detail: 'No fuzzing, no writes, no payloads.' },
+              { n: '02', label: 'SSRF-guarded targets', detail: 'Private and reserved ranges rejected.' },
+              { n: '03', label: 'Evidence-linked findings', detail: 'Every score traces to an observation.' },
+            ].map((item) => (
+              <div key={item.n} className="grid grid-cols-[32px_1fr] gap-3 border-b border-line py-4">
+                <dt className="font-mono text-[10px] tracking-[0.1em] text-muted">{item.n}</dt>
+                <div>
+                  <dt className="text-[13px] font-medium text-ink">{item.label}</dt>
+                  <dd className="mt-1 font-mono text-[10px] leading-relaxed text-muted">{item.detail}</dd>
+                </div>
+              </div>
+            ))}
+          </dl>
         </div>
 
-        {/* Footer note */}
-        <p className="text-center text-xs text-slate-600 mt-6">
-          Protected by Supabase Auth · Data encrypted at rest
-        </p>
-      </div>
+        <div className="relative z-10 flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">
+          <ShieldCheck className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+          TLS 1.3 · encrypted at rest · zero payloads
+        </div>
+      </aside>
+
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden outline-none"
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5 sm:px-8 lg:justify-end lg:border-b-0">
+          <div className="lg:hidden">
+            <BrandLogo to="/" size="sm" subtitle="Operator console" />
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/"
+              className="hidden min-h-10 items-center gap-1.5 px-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted hover:text-ink sm:inline-flex"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Public site
+            </Link>
+            <ThemeToggle />
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-5 py-[clamp(0.75rem,3vh,2.5rem)] sm:px-8">
+          <div className="aegis-auth-stage w-full max-w-[420px]">
+            <p className="aegis-eyebrow">Authentication / operator access</p>
+            <h1 className="mt-[clamp(0.5rem,1.8vh,1rem)] font-display text-[clamp(1.5rem,min(4.4vw,4.2vh),2.5rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-ink">
+              {isSignUp ? 'Create an operator account.' : 'Sign in to the console.'}
+            </h1>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted [@media(max-height:700px)]:hidden">
+              {isSignUp
+                ? 'One account for scans, history, OpenAPI operations, and team workspaces.'
+                : 'Resume your workspaces, scan history, and posture telemetry.'}
+            </p>
+
+            <div className="mt-[clamp(0.75rem,2.6vh,2rem)] grid grid-cols-2 gap-2">
+              <button
+                id="auth-google-btn"
+                type="button"
+                onClick={() => handleOAuth('google')}
+                disabled={oauthLoading !== null}
+                className={oauthClass}
+              >
+                {oauthLoading === 'google' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GoogleIcon />}
+                Google
+              </button>
+              <button
+                id="auth-github-btn"
+                type="button"
+                onClick={() => handleOAuth('github')}
+                disabled={oauthLoading !== null}
+                className={oauthClass}
+              >
+                {oauthLoading === 'github' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GitHubIcon />}
+                GitHub
+              </button>
+            </div>
+
+            <div className="my-[clamp(0.5rem,2vh,1.5rem)] flex items-center gap-3">
+              <div className="h-px flex-1 bg-line" />
+              <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">or email credentials</span>
+              <div className="h-px flex-1 bg-line" />
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-[clamp(0.375rem,1.4vh,1rem)]">
+              {isSignUp ? (
+                <div className="space-y-1.5">
+                  <label htmlFor="auth-name" className="aegis-label block !text-ink">
+                    Full name
+                  </label>
+                  <div className="relative">
+                    <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <input
+                      id="auth-name"
+                      type="text"
+                      autoComplete="name"
+                      placeholder="Alex Morgan"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required
+                      className={iconFieldClass}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="space-y-1.5">
+                <label htmlFor="auth-email" className="aegis-label block !text-ink">
+                  Email address
+                </label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                  <input
+                    id="auth-email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="name@company.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    className={`${iconFieldClass} font-mono text-[13px]`}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="auth-password" className="aegis-label block !text-ink">
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                  <input
+                    id="auth-password"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    placeholder="Minimum 6 characters"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className={`${iconFieldClass} pr-12 font-mono text-[13px]`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                </div>
+              </div>
+
+              {isSignUp ? (
+                <div className="space-y-1.5">
+                  <label htmlFor="auth-confirm-password" className="aegis-label block !text-ink">
+                    Confirm password
+                  </label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <input
+                      id="auth-confirm-password"
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      className={`${iconFieldClass} font-mono text-[13px]`}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                id="auth-password-submit-btn"
+                type="submit"
+                disabled={loading}
+                className="aegis-primary-action mt-1 min-h-12 w-full px-4 text-[13px] disabled:opacity-50"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Authenticating…
+                  </>
+                ) : (
+                  <>
+                    {isSignUp ? 'Create account' : 'Sign in with password'}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-[clamp(0.5rem,2.2vh,1.5rem)] border-t border-line pt-[clamp(0.6rem,1.6vh,1.25rem)] text-[12.5px] text-muted">
+              {isSignUp ? 'Already have an account? ' : 'No account yet? '}
+              <button
+                id="auth-mode-toggle"
+                type="button"
+                onClick={toggleMode}
+                className="inline-flex min-h-6 items-center font-medium text-ink underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-forest"
+              >
+                {isSignUp ? 'Sign in instead' : 'Create one'}
+              </button>
+            </p>
+
+            <p className="mt-[clamp(0.5rem,1.8vh,1.5rem)] font-mono text-[9.5px] uppercase leading-relaxed tracking-[0.1em] text-muted [@media(max-height:780px)]:hidden">
+              Sessions are issued by Supabase Auth. Credentials never reach the scan engine.
+            </p>
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

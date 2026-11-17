@@ -1,384 +1,173 @@
-// src/pages/Dashboard.tsx — Security Operations Console with quick scan & posture metrics
-import { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield,
   Scan,
   AlertCircle,
-  TrendingUp,
   Globe,
-  Sparkles,
   ArrowRight,
-  Clock,
+  Search,
+  User,
+  Users,
+  RefreshCw,
+  History,
+  FileCode2,
   Activity,
-  ChevronRight,
-  Zap,
-  Server,
-  Lock,
+  CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
+import { useWorkspace } from '../contexts/WorkspaceContext';
 import { useScan } from '../hooks/useScan';
 import { getScanHistory } from '../services/api';
 import type { ScanSummary } from '../types';
+import { Button, Badge, SeverityBadge } from '../components/ui';
+import { parseApiTimestamp } from '../lib/dateTime';
 
 const SAMPLE_PRESETS = [
-  { label: 'GitHub API', url: 'https://api.github.com' },
-  { label: 'Stripe API', url: 'https://api.stripe.com/v1/charges' },
+  { label: 'GitHub', url: 'https://api.github.com' },
+  { label: 'Stripe', url: 'https://api.stripe.com/v1/charges' },
   { label: 'JSONPlaceholder', url: 'https://jsonplaceholder.typicode.com/posts' },
-  { label: 'HTTPBin Echo', url: 'https://httpbin.org/get' },
+  { label: 'HTTPBin', url: 'https://httpbin.org/get' },
 ];
 
-function ScoreBadge({ score }: { score?: number }) {
-  if (score === undefined || score === null) {
-    return <span className="text-slate-500 font-mono text-xs">—</span>;
-  }
-  let color = 'text-red-400 bg-red-500/10 border-red-500/30';
-  let grade = 'F';
-  if (score >= 90) {
-    color = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-    grade = 'A+';
-  } else if (score >= 75) {
-    color = 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30';
-    grade = 'B';
-  } else if (score >= 50) {
-    color = 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30';
-    grade = 'C';
-  }
-
-  return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono ${color}`}>
-      <span className="font-extrabold text-xs">{score.toFixed(0)}</span>
-      <span className="text-[10px] font-bold opacity-80">({grade})</span>
-    </div>
-  );
+function formatStarted(value?: string) {
+  if (!value) return '—';
+  const date = parseApiTimestamp(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
 }
+
+function scoreTone(score?: number | null) {
+  if (score === undefined || score === null) return { text: 'text-muted', grade: '—' };
+  if (score >= 90) return { text: 'text-safe', grade: 'A+' };
+  if (score >= 75) return { text: 'text-info', grade: 'B' };
+  if (score >= 50) return { text: 'text-medium', grade: 'C' };
+  return { text: 'text-critical', grade: 'F' };
+}
+
+const statusTone: Record<string, string> = {
+  completed: 'bg-safe',
+  running: 'bg-forest',
+  pending: 'bg-medium',
+  failed: 'bg-critical',
+  cancelled: 'bg-muted',
+};
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { currentWorkspace } = useWorkspace();
   const { isLoading, error, startScan, scan } = useScan();
   const [url, setUrl] = useState('');
+  const [scanScope, setScanScope] = useState<'workspace' | 'personal'>('workspace');
   const [recentScans, setRecentScans] = useState<ScanSummary[]>([]);
   const [totalScans, setTotalScans] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
 
-  useEffect(() => {
-    getScanHistory(6, 0)
+  const loadRecentScans = useCallback(() => {
+    setHistoryState('loading');
+    getScanHistory(10, 0, 'workspace', currentWorkspace?.id)
       .then((r) => {
         setRecentScans(r.scans);
         setTotalScans(r.total);
+        setHistoryState('ready');
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => setHistoryState('error'));
+  }, [currentWorkspace?.id]);
 
   useEffect(() => {
-    if (scan?.status === 'completed') {
-      navigate(`/scan/${scan.id}`);
-    }
+    loadRecentScans();
+  }, [loadRecentScans]);
+
+  useEffect(() => {
+    if (scan?.status === 'completed') navigate(`/scan/${scan.id}`);
   }, [scan, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = url.trim();
-    if (!trimmed) {
-      toast.error('Please enter an API URL to scan.');
-      return;
-    }
+    if (!trimmed) return toast.error('Please enter an API URL to scan.');
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-      toast.error('URL must begin with http:// or https://');
-      return;
+      return toast.error('URL must begin with http:// or https://');
     }
-    await startScan(trimmed);
+    const targetWorkspaceId = user && scanScope === 'workspace' ? currentWorkspace?.id : null;
+    await startScan(trimmed, undefined, targetWorkspaceId);
   };
 
-  // Calculate average score
-  const completedScans = recentScans.filter((s) => s.assessment_score !== undefined && s.assessment_score !== null);
-  const avgScore = completedScans.length > 0
-    ? completedScans.reduce((acc, s) => acc + (s.assessment_score ?? 0), 0) / completedScans.length
-    : null;
+  const completedScans = recentScans.filter(
+    (s) => s.assessment_score !== undefined && s.assessment_score !== null,
+  );
+  const avgScore =
+    completedScans.length > 0
+      ? completedScans.reduce((acc, s) => acc + (s.assessment_score ?? 0), 0) / completedScans.length
+      : null;
+  const passedScans = completedScans.filter((s) => (s.assessment_score ?? 0) >= 75).length;
+  const criticalExposures = completedScans.filter((s) => (s.assessment_score ?? 0) < 50).length;
+  const filteredRecentScans = recentScans.filter(
+    (s) =>
+      !searchQuery ||
+      s.hostname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.url.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const watching = scan?.status === 'running' || scan?.status === 'pending';
 
   return (
-    <div className="min-h-screen px-4 sm:px-8 py-8 max-w-7xl mx-auto space-y-8">
-      {/* ── Top Header Banner ────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
+    <div className="aegis-container pb-16 page-dashboard">
+      <header className="dash-heading">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">Security Operations</span>
-            <span className="text-slate-600">•</span>
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Engine Online
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            API Security Console
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Dispatch non-invasive observable security checks against any API endpoint.
-          </p>
+          <p className="dash-kicker"><span /> SECURITY OVERVIEW <span className="dash-slash">/</span> {currentWorkspace?.name ?? 'Personal workspace'}</p>
+          <h1>Know where your APIs stand.</h1>
+          <p>Run an evidence-led security review and see what needs attention first.</p>
         </div>
-
-        {/* Quick Posture Stat Pills */}
-        <div className="flex items-center gap-3">
-          <div className="glass-card px-4 py-2.5 border border-slate-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
-              <Activity className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Scans</p>
-              <p className="text-base font-extrabold text-white font-mono">{totalScans}</p>
-            </div>
-          </div>
-
-          <div className="glass-card px-4 py-2.5 border border-slate-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Avg Posture</p>
-              <p className="text-base font-extrabold text-white font-mono">
-                {avgScore !== null ? `${avgScore.toFixed(0)}/100` : '—'}
-              </p>
-            </div>
-          </div>
+        <div className="dash-heading-actions">
+          <Button variant="secondary" size="sm" onClick={() => navigate('/history')} leftIcon={<History size={15} />}>View history</Button>
+          <Button variant="outline" size="sm" onClick={() => navigate('/spec')} leftIcon={<FileCode2 size={15} />}>Import a spec</Button>
         </div>
-      </div>
+      </header>
 
-      {/* ── Main Scan Trigger Cockpit ─────────────────────────────────────────── */}
-      <div className="glass-card border border-slate-700/80 rounded-2xl p-6 sm:p-8 shadow-xl shadow-cyan-950/30 relative overflow-hidden">
-        <div className="max-w-3xl mx-auto space-y-6">
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-400 text-xs font-semibold mb-1">
-              <Sparkles className="w-3.5 h-3.5" />
-              Target Ingestion
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold text-white">
-              Scan Target API Endpoint
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto">
-              Performs strict SSRF RFC 1918 validation, TLS 1.3 verification, defensive headers audit,
-              server banner reconnaissance, and threat reputation feeds.
-            </p>
-          </div>
-
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="gradient-border p-px rounded-2xl">
-              <div className="flex items-center gap-3 bg-slate-900 rounded-2xl px-4 py-3 sm:px-5 sm:py-4">
-                <Globe className="w-5 h-5 text-slate-500 flex-shrink-0" />
-                <input
-                  id="api-url-input"
-                  type="url"
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://api.example.com/v1/health"
-                  className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm font-mono"
-                  disabled={isLoading || scan?.status === 'running' || scan?.status === 'pending'}
-                  autoFocus
-                />
-                {url && (
-                  <button
-                    type="button"
-                    onClick={() => setUrl('')}
-                    className="text-xs text-slate-500 hover:text-slate-300 px-2"
-                  >
-                    Clear
-                  </button>
-                )}
-                <button
-                  id="start-scan-btn"
-                  type="submit"
-                  disabled={!url.trim() || isLoading || scan?.status === 'running' || scan?.status === 'pending'}
-                  className="flex items-center gap-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-md shadow-cyan-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 cursor-pointer"
-                >
-                  {isLoading || scan?.status === 'running' || scan?.status === 'pending' ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Auditing…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Scan className="w-4 h-4" />
-                      <span>Execute Audit</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Sample Presets */}
-            <div className="flex flex-wrap items-center justify-center gap-2 text-xs pt-1">
-              <span className="text-slate-500 font-medium mr-1 flex items-center gap-1">
-                <Zap className="w-3 h-3 text-cyan-400" /> Presets:
-              </span>
-              {SAMPLE_PRESETS.map((preset) => (
-                <button
-                  key={preset.url}
-                  type="button"
-                  onClick={() => setUrl(preset.url)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-white transition-all font-mono text-[11px] cursor-pointer"
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-
-            {/* In-Flight Scan Status Banner */}
-            {(scan?.status === 'pending' || scan?.status === 'running') && (
-              <div className="glass-card border border-cyan-500/40 p-4 rounded-xl flex items-center gap-3 bg-cyan-950/20">
-                <div className="w-3 h-3 bg-cyan-400 rounded-full animate-ping" />
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-white">Scan in Progress</p>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">
-                    Probing: {scan.url}
-                  </p>
-                </div>
-                <span className="text-xs font-mono font-bold text-cyan-400 uppercase bg-cyan-500/10 px-2.5 py-1 rounded border border-cyan-500/20">
-                  {scan.status}
-                </span>
-              </div>
-            )}
-
-            {error && (
-              <div className="flex items-center gap-2 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
+      <section className="dash-workbench" aria-label="Start a security assessment">
+        <div className="dash-scan-card">
+          <div className="dash-scan-topline"><div className="dash-scan-symbol"><Scan size={20} /></div><Badge variant="success" size="xs"><Shield size={12} /> Safe, read-only probes</Badge></div>
+          <p className="dash-overline">START A NEW ASSESSMENT</p>
+          <h2>What should we check?</h2>
+          <p className="dash-scan-description">Enter a public API endpoint. AEGIS checks transport, response policy, data exposure, and reputation.</p>
+          <form onSubmit={handleSubmit} className="dash-scan-form">
+            {user && <div className="dash-scope-row"><span>Save results to</span><div role="group" aria-label="Scan retention scope" className="dash-scope-switch"><button type="button" aria-pressed={scanScope === 'workspace'} onClick={() => setScanScope('workspace')}><Users size={14} /> Workspace</button><button type="button" aria-pressed={scanScope === 'personal'} onClick={() => setScanScope('personal')}><User size={14} /> Personal</button></div></div>}
+            <div className="dash-url-row"><div className="dash-url-field"><Globe size={18} /><label htmlFor="api-url-input" className="sr-only">Target API URL</label><input id="api-url-input" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.example.com/v1" disabled={isLoading || watching} /></div><Button id="start-scan-btn" type="submit" variant="primary" disabled={!url.trim() || isLoading || watching} isLoading={isLoading || watching} leftIcon={<Scan size={16} />}>{watching ? 'Checking…' : 'Run assessment'}</Button></div>
+            <div className="dash-presets"><span>TRY AN EXAMPLE</span>{SAMPLE_PRESETS.map((preset) => <button key={preset.url} type="button" onClick={() => setUrl(preset.url)} disabled={isLoading || watching}>{preset.label}</button>)}</div>
           </form>
+          {watching && <div aria-live="polite" className="dash-live-state"><span className="aegis-live-dot aegis-live-dot--pulse" /> Assessment running <code>{scan?.url}</code></div>}
+          {error && <div role="alert" className="dash-error"><AlertCircle size={16} />{error}</div>}
+          <div className="dash-promise"><Shield size={14} /><span>Probes are read-only. Destructive methods require explicit confirmation in Operation Scan.</span></div>
         </div>
-      </div>
+        <aside className="dash-method-card"><div className="dash-method-header"><div><p className="dash-overline">THE AEGIS METHOD</p><h3>Four signals. One clear picture.</h3></div><span className="dash-method-icon"><Shield size={19} /></span></div>
+          {[['01','Transport security','TLS versions, certificates, cipher strength'],['02','Response policy','HSTS, CSP, CORS, and browser protections'],['03','Data exposure','Server details, error messages, and secrets'],['04','Threat reputation','Domain intelligence and known risk signals']].map(([n,title,detail])=><div className="dash-method-row" key={n}><span>{n}</span><div><strong>{title}</strong><small>{detail}</small></div><CheckCircle2 size={15} /></div>)}
+          <p className="dash-method-foot">Every score links back to an observed result.</p>
+        </aside>
+      </section>
 
-      {/* ── Security Pillars Overview Matrix ─────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <section aria-label="Scan summary metrics" className="dash-metrics">
         {[
-          {
-            title: 'TLS 1.3 Cryptography',
-            desc: 'Cipher suite security, SAN domain match, cert expiration window.',
-            icon: Lock,
-            color: 'text-cyan-400',
-            bg: 'bg-cyan-500/10',
-            border: 'border-cyan-500/20',
-          },
-          {
-            title: 'Defensive Headers',
-            desc: 'HSTS preloading, CSP policies, X-Content-Type, CORS enforcement.',
-            icon: Shield,
-            color: 'text-emerald-400',
-            bg: 'bg-emerald-500/10',
-            border: 'border-emerald-500/20',
-          },
-          {
-            title: 'Recon & Info Leaks',
-            desc: 'Server header suppression, framework fingerprints, stack dump check.',
-            icon: Server,
-            color: 'text-amber-400',
-            bg: 'bg-amber-500/10',
-            border: 'border-amber-500/20',
-          },
-          {
-            title: 'Threat Intelligence',
-            desc: 'VirusTotal 70+ vendor malware & phishing telemetry feeds.',
-            icon: Activity,
-            color: 'text-purple-400',
-            bg: 'bg-purple-500/10',
-            border: 'border-purple-500/20',
-          },
-        ].map((pillar) => {
-          const Icon = pillar.icon;
-          return (
-            <div
-              key={pillar.title}
-              className="glass-card p-5 rounded-xl border border-slate-800/80 hover:border-slate-700 transition-all"
-            >
-              <div className={`w-9 h-9 rounded-lg ${pillar.bg} border ${pillar.border} flex items-center justify-center mb-3 ${pillar.color}`}>
-                <Icon className="w-4 h-4" />
-              </div>
-              <h3 className="text-sm font-bold text-white mb-1">{pillar.title}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">{pillar.desc}</p>
-            </div>
-          );
-        })}
-      </div>
+          { label: 'ASSESSMENTS', value: totalScans, note: 'Saved in this workspace', icon: History, tone: 'neutral' },
+          { label: 'AVERAGE SCORE', value: avgScore !== null ? avgScore.toFixed(0) : '—', note: 'Across recent completed scans', icon: Activity, tone: 'neutral' },
+          { label: 'HEALTHY', value: passedScans, note: 'Score of 75 or higher', icon: Shield, tone: 'safe' },
+          { label: 'NEEDS REVIEW', value: criticalExposures, note: 'Score below 50', icon: AlertCircle, tone: 'attention' },
+        ].map((metric) => <article className={`dash-metric dash-metric-${metric.tone}`} key={metric.label}><div className="dash-metric-icon"><metric.icon size={17} /></div><p>{metric.label}</p><strong>{metric.value}</strong><small>{metric.note}</small></article>)}
+      </section>
 
-      {/* ── Recent Scans Feed ────────────────────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-base font-bold text-white">Recent Security Audits</h2>
-            <span className="text-xs text-slate-500 font-mono">({recentScans.length} recent)</span>
-          </div>
-          {recentScans.length > 0 && (
-            <button
-              onClick={() => navigate('/history')}
-              className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              View Full History <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {recentScans.length === 0 ? (
-          <div className="glass-card p-10 text-center rounded-2xl border border-slate-800">
-            <div className="w-12 h-12 rounded-xl bg-slate-800/60 border border-slate-700/60 flex items-center justify-center mx-auto mb-3 text-slate-500">
-              <Shield className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-semibold text-white mb-1">No Scans Recorded Yet</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
-              Enter an API URL above or click a preset to perform your first non-invasive observable security scan.
-            </p>
-            <button
-              onClick={() => setUrl('https://api.github.com')}
-              className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-semibold hover:bg-cyan-500/20 transition-all cursor-pointer"
-            >
-              Try GitHub API Demo
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {recentScans.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => navigate(`/scan/${s.id}`)}
-                className="glass-card p-4 rounded-xl border border-slate-800/80 hover:border-cyan-500/40 text-left transition-all group flex flex-col justify-between cursor-pointer"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-white font-mono truncate max-w-[180px] group-hover:text-cyan-300 transition-colors">
-                      {s.hostname}
-                    </span>
-                    <ScoreBadge score={s.assessment_score} />
-                  </div>
-                  <p className="text-[11px] text-slate-400 font-mono truncate mb-3">
-                    {s.url}
-                  </p>
-                </div>
-
-                <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1">
-                      <span className={`w-2 h-2 rounded-full ${
-                        s.status === 'completed' ? 'bg-emerald-400' :
-                        s.status === 'failed' ? 'bg-red-400' : 'bg-yellow-400'
-                      }`} />
-                      <span className="capitalize">{s.status}</span>
-                    </span>
-                    {s.user_id && user && s.user_id === user.id ? (
-                      <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-1.5 py-0.2 rounded border border-cyan-500/20">
-                        Mine
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="group-hover:text-cyan-400 flex items-center gap-1 transition-colors">
-                    View <ChevronRight className="w-3 h-3" />
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+      <section className="dash-recent-section">
+        <div className="dash-recent-heading"><div><p className="dash-overline">YOUR LATEST ACTIVITY</p><h2>Recent assessments</h2></div><div className="dash-recent-tools"><label className="dash-search"><Search size={15} /><input aria-label="Filter recent scans" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search endpoints" /></label>{recentScans.length > 0 && <Button variant="ghost" size="sm" onClick={() => navigate('/history')} rightIcon={<ArrowRight size={15} />}>All activity</Button>}</div></div>
+        {historyState === 'error' ? <div className="dash-state-box"><div><strong>We couldn’t load your activity</strong><p>The scan history service did not respond.</p></div><Button variant="secondary" size="sm" onClick={loadRecentScans} leftIcon={<RefreshCw size={14} />}>Try again</Button></div> : historyState === 'loading' ? <div className="dash-loading-list" aria-busy="true" aria-label="Loading recent scans">{[0,1,2].map((row)=><div key={row} className="skeleton h-16 w-full" />)}</div> : filteredRecentScans.length === 0 ? <div className="dash-empty"><span><Shield size={22} /></span><div><strong>{searchQuery ? 'No matching endpoints' : 'Your first assessment starts here'}</strong><p>{searchQuery ? `Nothing in your recent activity matches “${searchQuery}”.` : 'Run an assessment above to start building a clear picture of your API security.'}</p></div>{searchQuery ? <Button variant="secondary" size="sm" onClick={() => setSearchQuery('')}>Clear search</Button> : <Button variant="secondary" size="sm" onClick={() => setUrl('https://api.github.com')}>Try an example</Button>}</div> : <div className="dash-table-wrap"><table className="dash-table"><thead><tr><th>ENDPOINT</th><th>ASSESSMENT</th><th>STATUS</th><th>DATE</th><th></th></tr></thead><tbody>{filteredRecentScans.map((s) => { const tone = scoreTone(s.assessment_score); return <tr key={s.id} onClick={() => navigate(`/scan/${s.id}`)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/scan/${s.id}`); }}><td><strong>{s.hostname}</strong><small>{s.url}</small></td><td><span className={`dash-score ${tone.text}`}>{s.assessment_score != null ? s.assessment_score.toFixed(0) : '—'}</span><span className="dash-grade">{tone.grade}</span></td><td><span className="dash-status"><i className={statusTone[s.status] ?? 'bg-muted'} />{s.status}{s.highest_severity && <SeverityBadge severity={s.highest_severity} size="xs" />}</span></td><td><time dateTime={s.started_at}>{formatStarted(s.started_at)}</time></td><td><ArrowRight size={16} /></td></tr>; })}</tbody></table></div>}
+      </section>
     </div>
   );
 }

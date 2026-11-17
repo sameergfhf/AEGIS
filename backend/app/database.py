@@ -31,7 +31,7 @@ class Base(DeclarativeBase):
 
 async def init_db() -> None:
     """Create all tables if they do not exist and ensure columns exist."""
-    from app.models import scan, finding  # noqa: F401 — ensure models are imported
+    from app.models import scan, finding, scheduled_scan  # noqa: F401 — ensure models are imported
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -44,6 +44,8 @@ async def init_db() -> None:
                 await conn.execute(text("ALTER TABLE scans ADD COLUMN user_id VARCHAR(64)"))
             if "user_email" not in existing_cols:
                 await conn.execute(text("ALTER TABLE scans ADD COLUMN user_email VARCHAR(255)"))
+            if "workspace_id" not in existing_cols:
+                await conn.execute(text("ALTER TABLE scans ADD COLUMN workspace_id VARCHAR(36)"))
         except Exception:
             pass
 

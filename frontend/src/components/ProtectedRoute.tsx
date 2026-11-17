@@ -1,12 +1,10 @@
-// src/components/ProtectedRoute.tsx — Guards routes behind Supabase auth
-
 import { Navigate, Outlet } from 'react-router-dom';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Loader2, Shield } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { BrandMark } from './BrandLogo';
 
 interface Props {
-  /** Optional: wrap outlet in a layout component */
   children?: ReactNode;
 }
 
@@ -15,12 +13,22 @@ export default function ProtectedRoute({ children }: Props) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center gap-4">
-        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 shadow-lg shadow-cyan-500/30">
-          <Shield className="w-7 h-7 text-white" />
-        </div>
-        <Loader2 className="w-6 h-6 text-cyan-500 animate-spin" />
-        <p className="text-sm text-slate-400">Loading API Sentinel…</p>
+      <div className="aegis-shell">
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex min-h-screen flex-col items-center justify-center gap-5 outline-none"
+        >
+          <div className="flex items-center gap-3">
+            <BrandMark size="md" />
+            <span className="font-display text-[15px] font-semibold uppercase tracking-[0.16em] text-ink">Aegis</span>
+          </div>
+          <div className="flex items-center gap-2.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-forest" aria-hidden="true" />
+            Verifying session
+          </div>
+          <span className="sr-only">Loading AEGIS</span>
+        </main>
       </div>
     );
   }
@@ -29,7 +37,5 @@ export default function ProtectedRoute({ children }: Props) {
     return <Navigate to="/auth" replace />;
   }
 
-  // If children (e.g. <Layout />) are passed, render them as the layout outlet
-  // Otherwise just render <Outlet /> directly
   return children ? <>{children}</> : <Outlet />;
 }

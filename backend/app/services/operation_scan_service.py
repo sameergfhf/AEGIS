@@ -172,6 +172,7 @@ async def create_operation_scan(
         status="pending",
         user_id=user_id,
         user_email=user_email,
+        workspace_id=request.workspace_id,
     )
     async with db.begin():
         db.add(scan)

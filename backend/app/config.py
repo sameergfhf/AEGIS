@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     github_client_id: str = ""
     github_client_secret: str = ""
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"

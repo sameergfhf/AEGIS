@@ -15,7 +15,6 @@ import {
   X,
 } from 'lucide-react';
 import { analyzeSpecUrl, analyzeSpecFile } from '../services/api';
-import { downloadFromStorage, fetchSpecUploadsFromSupabase } from '../services/supabaseService';
 import type { SpecAnalysis, EndpointInfo } from '../types';
 import type { OperationScanLocationState } from './OperationScan';
 import { Button, MethodBadge, Badge } from '../components/ui';
@@ -185,15 +184,7 @@ export default function SpecAnalyzer() {
   const [methodFilter, setMethodFilter] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [savedSpecs, setSavedSpecs] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetchSpecUploadsFromSupabase()
-      .then((specs) => {
-        if (specs && specs.length > 0) setSavedSpecs(specs);
-      })
-      .catch(() => {});
-  }, []);
+  const [savedSpecs] = useState<any[]>([]);
 
   useEffect(() => {
     const state = location.state as { restoredAnalysis?: SpecAnalysis } | null;
@@ -248,28 +239,6 @@ export default function SpecAnalyzer() {
   };
 
   const openSavedSpec = async (saved: any) => {
-    if (typeof saved.spec_url === 'string' && saved.spec_url.startsWith('storage://')) {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const objectPath = saved.spec_url.slice('storage://'.length);
-        const text = typeof saved.content === 'string' && saved.content.length >= 50_000
-          ? await downloadFromStorage(objectPath)
-          : (saved.content || await downloadFromStorage(objectPath));
-        if (!text) throw new Error('The private saved specification could not be loaded. Check that you still have access to its account.');
-        const file = new File([text], saved.filename || 'openapi.json', { type: 'application/json' });
-        setActiveTab('file');
-        setAnalysis(await analyzeSpecFile(file));
-        toast.success(`Loaded ${saved.filename || 'saved specification'}`);
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : 'Could not load the saved specification.';
-        setError(message);
-        toast.error(message);
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
     if (saved.spec_url) {
       setActiveTab('url');
       setUrl(saved.spec_url);

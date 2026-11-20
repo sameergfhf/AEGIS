@@ -1,3 +1,7 @@
+# ==============================================================================
+# AEGIS Security Platform — .gitignore
+# ==============================================================================
+
 # ─── Environment & Secrets ──────────────────────────────────────────────────
 .env
 .env.*
@@ -21,9 +25,6 @@ develop-eggs/
 downloads/
 eggs/
 .eggs/
-/lib/
-/lib64/
-!frontend/src/lib/
 parts/
 sdist/
 var/
@@ -31,7 +32,7 @@ wheels/
 pip-wheel-metadata/
 share/python-wheels/
 
-# Python Virtual Environments
+# Virtual Environments
 .venv/
 venv/
 ENV/
@@ -49,14 +50,13 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# ─── Local Database Files ────────────────────────────────────────────────────
+# Local Database Files (All data resides directly in Neon PostgreSQL)
 *.db
 *.sqlite
 *.sqlite3
-api_sentinel.db
-api_sentinel.db-journal
-api_sentinel.db-wal
-api_sentinel.db-shm
+*.db-journal
+*.db-wal
+*.db-shm
 
 # ─── Node & Frontend ─────────────────────────────────────────────────────────
 node_modules/
@@ -91,6 +91,7 @@ lerna-debug.log*
 ehthumbs.db
 Thumbs.db
 
-
+# ─── Temporary & Agent Tool Files ────────────────────────────────────────────
+scratch/
 .agents/
 skills-lock.json

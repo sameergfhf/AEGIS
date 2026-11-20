@@ -10,7 +10,6 @@ import httpx
 
 from app.config import get_settings
 from app.security.redaction import redact_value
-from app.services.supabase_sync import _get_rest_headers, _get_supabase_config
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +21,7 @@ class AIUnavailable(Exception):
 async def _record_usage(workspace_id: str | None, actor_id: str, scan_id: str, model: str, succeeded: bool) -> None:
     if not workspace_id:
         return
-    try:
-        base, key = _get_supabase_config()
-        if not base or not key:
-            return
-        headers = _get_rest_headers()
-        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-            response = await client.post(f"{base}/rest/v1/workspace_audit_events", headers=headers, json={
-                "workspace_id": workspace_id, "actor_id": actor_id,
-                "action": "ai.explanation.completed" if succeeded else "ai.explanation.failed",
-                "resource_type": "scan_finding", "resource_id": scan_id,
-                "metadata": {"provider_model": model, "success": succeeded},
-            })
-            response.raise_for_status()
-    except (httpx.HTTPError, ValueError) as exc:
-        logger.info("AI usage audit persistence unavailable: %s", type(exc).__name__)
+    logger.info("AI explanation %s for scan %s by %s (model=%s)", "succeeded" if succeeded else "failed", scan_id, actor_id, model)
 
 
 async def explain_finding(*, workspace_id: str | None, actor_id: str, scan_id: str, finding: dict) -> str:

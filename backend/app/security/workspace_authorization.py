@@ -27,8 +27,8 @@ class Permission(str, Enum):
     MANAGE_WORKSPACE = "workspace.manage"
 
 
-# Existing Supabase rows use owner/admin/member. "member" maps to the initial
-# Security Analyst capability set until workspace-specific roles are migrated.
+# Role capability mappings. "member" maps to the initial
+# Security Analyst capability set.
 ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
     "owner": frozenset(Permission),
     "admin": frozenset({
@@ -49,68 +49,38 @@ ROLE_PERMISSIONS: dict[str, frozenset[Permission]] = {
 
 
 async def workspace_role(workspace_id: str, user: UserContext) -> str:
-    """Resolve owner or active member role through Supabase RLS using the user's JWT."""
+    """Resolve owner or active member role directly from Neon PostgreSQL."""
     try:
         normalized_workspace_id = str(UUID(workspace_id))
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=404, detail="Workspace not found.") from exc
 
-    settings = get_settings()
-    base_url = (settings.supabase_auth_url or settings.supabase_url).rstrip("/")
-    api_key = settings.supabase_auth_anon_key
-    if not base_url or not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Workspace authorization is not configured on this API server.",
+    from app.database import AsyncSessionLocal
+    from app.models.workspace import Workspace, WorkspaceMember
+
+    async with AsyncSessionLocal() as session:
+        # Check workspace and ownership
+        ws_res = await session.execute(select(Workspace).where(Workspace.id == normalized_workspace_id))
+        ws = ws_res.scalar_one_or_none()
+        if not ws:
+            raise HTTPException(status_code=404, detail="Workspace not found.")
+        if ws.owner_id == user.id:
+            return "owner"
+
+        # Check membership
+        mem_res = await session.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == normalized_workspace_id,
+                WorkspaceMember.user_id == user.id,
+                WorkspaceMember.status == "active",
+            )
         )
-    if not user.access_token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required.")
-
-    headers = {
-        "apikey": api_key,
-        "Authorization": f"Bearer {user.access_token}",
-        "Accept": "application/json",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-            workspace_response = await client.get(
-                f"{base_url}/rest/v1/workspaces",
-                params={"id": f"eq.{normalized_workspace_id}", "select": "id,owner_id"},
-                headers=headers,
-            )
-            workspace_response.raise_for_status()
-            rows = workspace_response.json()
-            if not isinstance(rows, list) or not rows:
-                raise HTTPException(status_code=404, detail="Workspace not found.")
-            if rows[0].get("owner_id") == user.id:
-                return "owner"
-
-            member_response = await client.get(
-                f"{base_url}/rest/v1/workspace_members",
-                params={
-                    "workspace_id": f"eq.{normalized_workspace_id}",
-                    "user_id": f"eq.{user.id}",
-                    "status": "eq.active",
-                    "select": "role",
-                },
-                headers=headers,
-            )
-            member_response.raise_for_status()
-            members = member_response.json()
-    except HTTPException:
-        raise
-    except (httpx.HTTPError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not verify workspace membership with Supabase.",
-        ) from exc
-
-    if not isinstance(members, list) or not members:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not an active workspace member.")
-    role = members[0].get("role")
-    if role not in ROLE_PERMISSIONS:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace role is not recognized.")
-    return role
+        member = mem_res.scalar_one_or_none()
+        if not member:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not an active workspace member.")
+        if member.role not in ROLE_PERMISSIONS:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace role is not recognized.")
+        return member.role
 
 
 async def require_workspace_permission(

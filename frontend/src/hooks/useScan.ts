@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { createScan, getScan, getFindings, getVisualizations, getErrorMessage } from '../services/api';
 import type { Scan, Finding, Visualizations } from '../types';
 
-const POLL_INTERVAL_MS = 2000;
+const INITIAL_POLL_INTERVAL_MS = 600;
+const POLL_INTERVAL_MS = 1000;
 
 interface UseScanReturn {
   scan: Scan | null;
@@ -49,6 +50,7 @@ export function useScan(): UseScanReturn {
 
   const poll = useCallback((scanId: string) => {
     setIsPolling(true);
+    let attempts = 0;
     const tick = async () => {
       try {
         const updated = await getScan(scanId);
@@ -61,7 +63,9 @@ export function useScan(): UseScanReturn {
             setError(updated.error_message);
           }
         } else {
-          pollRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+          attempts++;
+          const nextInterval = attempts === 1 ? INITIAL_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
+          pollRef.current = setTimeout(tick, nextInterval);
         }
       } catch (err) {
         setError(getErrorMessage(err));

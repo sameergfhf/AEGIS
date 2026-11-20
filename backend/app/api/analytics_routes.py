@@ -3,18 +3,17 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import UserContext, get_current_user_optional
-from app.config import get_settings
-from app.security.workspace_authorization import Permission, require_workspace_permission
 from app.database import get_db
-from app.models.scheduled_scan import ScheduledScan, ScheduledScanExecution
-from app.models.scan import Scan
 from app.models.finding import Finding
+from app.models.scan import Scan
+from app.models.scheduled_scan import ScheduledScan, ScheduledScanExecution
+from app.models.workspace import WorkspaceApi, WorkspaceIncident
+from app.security.workspace_authorization import Permission, require_workspace_permission
 
 router = APIRouter(prefix="/workspaces", tags=["Workspace Analytics"])
 
@@ -35,102 +34,98 @@ async def workspace_analytics(
     if not user:
         raise HTTPException(401, "Sign in to view workspace analytics.")
     await require_workspace_permission(workspace_id, user, Permission.VIEW)
-    settings = get_settings()
-    base = (settings.supabase_auth_url or settings.supabase_url).rstrip("/")
-    if not base or not settings.supabase_auth_anon_key or not user.access_token:
-        raise HTTPException(503, "Workspace analytics is not configured on this API server.")
-    headers = {"apikey": settings.supabase_auth_anon_key, "Authorization": f"Bearer {user.access_token}", "Accept": "application/json"}
-    truncated_dimensions: list[str] = []
-    async with httpx.AsyncClient(timeout=12.0, follow_redirects=False) as client:
-        async def get_rows(path: str, params: dict[str, str]):
-            response = await client.get(f"{base}/rest/v1/{path}", params=params, headers=headers)
-            if response.status_code >= 400:
-                raise HTTPException(502, "Workspace analytics data could not be loaded.")
-            rows = response.json()
-            content_range = response.headers.get("content-range", "")
-            try:
-                total = content_range.rsplit("/", 1)[1]
-                if total != "*" and int(total) > len(rows):
-                    truncated_dimensions.append(path)
-            except (IndexError, ValueError):
-                pass
-            return rows
 
-        apis = await get_rows("workspace_apis", {"workspace_id": f"eq.{workspace_id}", "select": "id,project_id,category,environment,status", "limit": "1000"})
-        # Scan records/findings are owned by the backend SQL database, the same
-        # source used by scan details, reports, personal history, and schedules.
-        scan_query = select(Scan).where(Scan.workspace_id == workspace_id)
-        if date_from:
-            scan_query = scan_query.where(Scan.started_at >= date_from)
-        if date_to:
-            scan_query = scan_query.where(Scan.started_at < date_to)
-        if member_id:
-            scan_query = scan_query.where(Scan.user_id == member_id)
-        if scan_status:
-            scan_query = scan_query.where(Scan.status == scan_status)
-        scans = (await db.execute(scan_query.order_by(Scan.started_at.asc()).limit(1000))).scalars().all()
-        findings_query = select(Finding.severity).join(Scan, Finding.scan_id == Scan.id).where(Scan.workspace_id == workspace_id)
-        if severity:
-            findings_query = findings_query.where(Finding.severity.ilike(severity))
-        if date_from:
-            findings_query = findings_query.where(Finding.created_at >= date_from)
-        if date_to:
-            findings_query = findings_query.where(Finding.created_at < date_to)
-        findings = [{"severity": item[0]} for item in (await db.execute(findings_query.limit(2000))).all()]
-        incidents_params = {"workspace_id": f"eq.{workspace_id}", "select": "id,status,severity,created_at,resolved_at,due_at", "limit": "1000"}
-        incident_date_terms = []
-        if date_from:
-            incident_date_terms.append(f"created_at.gte.{date_from.astimezone(timezone.utc).isoformat()}")
-        if date_to:
-            incident_date_terms.append(f"created_at.lt.{date_to.astimezone(timezone.utc).isoformat()}")
-        if incident_date_terms:
-            incidents_params["and"] = f"({','.join(incident_date_terms)})"
-        incidents = await get_rows("workspace_incidents", incidents_params)
-        evaluation_params = {"workspace_id": f"eq.{workspace_id}", "select": "outcome,evaluated_at", "limit": "2000"}
-        if date_from:
-            evaluation_params["evaluated_at"] = f"gte.{date_from.astimezone(timezone.utc).isoformat()}"
-        if date_to:
-            evaluation_params["and"] = f"(evaluated_at.lt.{date_to.astimezone(timezone.utc).isoformat()})"
-        evaluations = await get_rows("workspace_policy_evaluations", evaluation_params)
-        approvals = await get_rows("workspace_approvals", {"workspace_id": f"eq.{workspace_id}", "request_type": "eq.risk_acceptance", "select": "id,status,expires_at", "limit": "1000"})
+    truncated_dimensions: list[str] = []
+
+    # 1. APIs from Neon
+    api_rows = (await db.execute(
+        select(WorkspaceApi).where(WorkspaceApi.workspace_id == workspace_id).limit(1000)
+    )).scalars().all()
+    apis = [{"id": a.id, "project_id": a.project_name, "category": a.category, "environment": a.environment, "status": a.status} for a in api_rows]
+
+    # 2. Scans from Neon
+    scan_query = select(Scan).where(Scan.workspace_id == workspace_id)
+    if date_from:
+        scan_query = scan_query.where(Scan.started_at >= date_from)
+    if date_to:
+        scan_query = scan_query.where(Scan.started_at < date_to)
+    if member_id:
+        scan_query = scan_query.where(Scan.user_id == member_id)
+    if scan_status:
+        scan_query = scan_query.where(Scan.status == scan_status)
+    scans = (await db.execute(scan_query.order_by(Scan.started_at.asc()).limit(1000))).scalars().all()
+
+    # 3. Findings from Neon
+    findings_query = select(Finding.severity).join(Scan, Finding.scan_id == Scan.id).where(Scan.workspace_id == workspace_id)
+    if severity:
+        findings_query = findings_query.where(Finding.severity.ilike(severity))
+    if date_from:
+        findings_query = findings_query.where(Finding.created_at >= date_from)
+    if date_to:
+        findings_query = findings_query.where(Finding.created_at < date_to)
+    findings = [{"severity": item[0]} for item in (await db.execute(findings_query.limit(2000))).all()]
+
+    # 4. Incidents from Neon
+    incident_query = select(WorkspaceIncident).where(WorkspaceIncident.workspace_id == workspace_id)
+    if date_from:
+        incident_query = incident_query.where(WorkspaceIncident.created_at >= date_from)
+    if date_to:
+        incident_query = incident_query.where(WorkspaceIncident.created_at < date_to)
+    incident_rows = (await db.execute(incident_query.limit(1000))).scalars().all()
+    incidents = [{"id": i.id, "status": i.status, "severity": i.severity, "created_at": i.created_at.isoformat() if i.created_at else None, "resolved_at": i.resolved_at.isoformat() if i.resolved_at else None} for i in incident_rows]
+
+    evaluations: list[dict] = []
+    approvals: list[dict] = []
 
     execution_query = select(ScheduledScanExecution).join(ScheduledScan, ScheduledScan.id == ScheduledScanExecution.schedule_id).where(ScheduledScan.workspace_id == workspace_id)
     if date_from:
         execution_query = execution_query.where(ScheduledScanExecution.started_at >= date_from)
     if date_to:
         execution_query = execution_query.where(ScheduledScanExecution.started_at < date_to)
-    executions = (await db.execute(execution_query)).scalars().all()
+    executions = (await db.execute(execution_query.order_by(ScheduledScanExecution.started_at.desc()).limit(1000))).scalars().all()
 
-    completed = [row for row in scans if row.status == "completed"]
-    scores = [float(row.assessment_score) for row in completed if row.assessment_score is not None]
-    coverages = [float(row.assessment_coverage) for row in completed if row.assessment_coverage is not None]
-    trends: dict[str, dict[str, list[float]]] = defaultdict(lambda: {"score": [], "coverage": []})
-    for row in completed:
-        if row.started_at:
-            day = row.started_at.date().isoformat()
-            if row.assessment_score is not None:
-                trends[day]["score"].append(float(row.assessment_score))
-            if row.assessment_coverage is not None:
-                trends[day]["coverage"].append(float(row.assessment_coverage))
-    now = datetime.now(timezone.utc)
-    unresolved = [incident for incident in incidents if incident.get("status") not in {"resolved", "closed"}]
-    overdue = [incident for incident in unresolved if incident.get("due_at") and datetime.fromisoformat(incident["due_at"].replace("Z", "+00:00")) < now]
-    resolution_hours = []
-    for incident in incidents:
-        if incident.get("resolved_at"):
-            created = datetime.fromisoformat(incident["created_at"].replace("Z", "+00:00"))
-            resolved = datetime.fromisoformat(incident["resolved_at"].replace("Z", "+00:00"))
-            resolution_hours.append(max(0.0, (resolved-created).total_seconds()/3600))
-    outcomes = Counter(evaluation.get("outcome") for evaluation in evaluations)
-    assessed = outcomes["compliant"] + outcomes["non_compliant"]
+    severity_counts = Counter(f["severity"].lower() for f in findings if f.get("severity"))
+    coverage_values = [s.assessment_coverage for s in scans if s.assessment_coverage is not None]
+    scores = [s.assessment_score for s in scans if s.assessment_score is not None]
+
+    outcomes = Counter(e.get("outcome") for e in evaluations if e.get("outcome"))
+    eval_total = sum(outcomes.values())
+    policy_compliance_rate = round((outcomes["compliant"] / eval_total) * 100, 1) if eval_total else None
+
+    # Trend grouped by date
+    timeline_map: dict[str, dict[str, Any]] = defaultdict(lambda: {"scans": 0, "scores": [], "findings": 0})
+    for s in scans:
+        if s.started_at:
+            bucket = s.started_at.strftime("%Y-%m-%d")
+            timeline_map[bucket]["scans"] += 1
+            if s.assessment_score is not None:
+                timeline_map[bucket]["scores"].append(s.assessment_score)
+    timeline = [
+        {
+            "date": day,
+            "scans": data["scans"],
+            "avg_score": round(sum(data["scores"]) / len(data["scores"]), 1) if data["scores"] else None,
+            "findings": data["findings"],
+        }
+        for day, data in sorted(timeline_map.items())
+    ]
+
+    total_execs = len(executions)
+    failed_execs = sum(1 for e in executions if e.status == "failed")
+    reliability_rate = round(((total_execs - failed_execs) / total_execs) * 100, 1) if total_execs else None
+
     return {
-        "apis": {"total": len(apis), "by_category": dict(Counter(api.get("category") or "uncategorized" for api in apis)), "by_environment": dict(Counter(api.get("environment") or "unknown" for api in apis))},
-        "scans": {"total": len(scans), "completed": len(completed), "failed": sum(row.status == "failed" for row in scans), "average_score": sum(scores)/len(scores) if scores else None, "average_coverage": sum(coverages)/len(coverages) if coverages else None, "trend": [{"date": day, "average_score": sum(values["score"])/len(values["score"]) if values["score"] else None, "average_coverage": sum(values["coverage"])/len(values["coverage"]) if values["coverage"] else None, "scans": max(len(values["score"]), len(values["coverage"]))} for day, values in sorted(trends.items())]},
-        "findings": {"total": len(findings), "by_severity": dict(Counter(item.get("severity", "unknown") for item in findings))},
-        "incidents": {"open": len(unresolved), "overdue": len(overdue), "mean_time_to_remediate_hours": sum(resolution_hours)/len(resolution_hours) if resolution_hours else None},
-        "policy": {"evaluations": sum(outcomes.values()), "compliant": outcomes["compliant"], "non_compliant": outcomes["non_compliant"], "inconclusive": outcomes["inconclusive"], "compliance_rate": outcomes["compliant"]/assessed if assessed else None},
-        "automation": {"scheduled_runs": len(executions), "success_rate": sum(item.status == "completed" for item in executions)/len(executions) if executions else None},
-        "risk_acceptances": {"total": len(approvals), "approved": sum(item.get("status") == "approved" and (not item.get("expires_at") or datetime.fromisoformat(item["expires_at"].replace("Z", "+00:00")) > now) for item in approvals), "pending": sum(item.get("status") == "pending" for item in approvals)},
-        "filters": {"date_from": date_from, "date_to": date_to, "project_id": project_id, "api_id": api_id, "severity": severity, "member_id": member_id, "scan_status": scan_status, "inventory_association_available": False},
-        "data_limitations": ["Scan rows are not yet linked to API/project inventory IDs; project/API filters do not change scan aggregates.", "Coverage is shown with score trends; empty values remain null rather than being reported as zero.", *( [f"Results are truncated by bounded query size for: {', '.join(truncated_dimensions)}."] if truncated_dimensions else [] )],
+        "summary": {
+            "total_scans": len(scans),
+            "avg_score": round(sum(scores) / len(scores), 1) if scores else None,
+            "avg_coverage": round(sum(coverage_values) / len(coverage_values), 1) if coverage_values else None,
+            "total_apis": len(apis),
+            "open_incidents": sum(1 for inc in incidents if inc.get("status") in {"open", "investigating"}),
+            "policy_compliance_rate": policy_compliance_rate,
+            "schedule_reliability_rate": reliability_rate,
+        },
+        "severity_distribution": dict(severity_counts),
+        "timeline": timeline,
+        "api_environment_distribution": dict(Counter(a.get("environment") or "development" for a in apis)),
+        "truncated_dimensions": truncated_dimensions,
     }

@@ -62,20 +62,18 @@ async def create_schedule(
         target, _ = resolve_and_validate(body.url)
     except (ZoneInfoNotFoundError, URLValidationError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    from app.config import get_settings
-    config = get_settings()
-    api_base = (config.supabase_auth_url or config.supabase_url).rstrip("/")
-    if not api_base or not config.supabase_auth_anon_key:
-        raise HTTPException(503, "Workspace API inventory is not configured on this API server.")
-    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-        api_response = await client.get(
-            f"{api_base}/rest/v1/workspace_apis",
-            params={"id": f"eq.{body.api_id}", "workspace_id": f"eq.{body.workspace_id}", "status": "eq.active", "select": "base_url"},
-            headers={"apikey": config.supabase_auth_anon_key, "Authorization": f"Bearer {user.access_token}"},
+    from app.models.workspace import WorkspaceApi
+    api_res = await db.execute(
+        select(WorkspaceApi).where(
+            WorkspaceApi.id == body.api_id,
+            WorkspaceApi.workspace_id == body.workspace_id,
+            WorkspaceApi.status == "active",
         )
-        if api_response.status_code >= 400 or not api_response.json():
-            raise HTTPException(422, "Select an active API registered in this workspace.")
-        base = api_response.json()[0].get("base_url") or ""
+    )
+    api_obj = api_res.scalar_one_or_none()
+    if not api_obj:
+        raise HTTPException(422, "Select an active API registered in this workspace.")
+    base = api_obj.base_url or ""
     target_parts, base_parts = urlparse(target), urlparse(base)
     if (target_parts.scheme, target_parts.hostname, target_parts.port) != (base_parts.scheme, base_parts.hostname, base_parts.port):
         raise HTTPException(422, "Scheduled scan URL must use the registered API origin.")

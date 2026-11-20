@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -12,10 +12,10 @@ from app.database import Base
 class ScheduledScan(Base):
     __tablename__ = "scheduled_scans"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    workspace_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    api_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    created_by: Mapped[str] = mapped_column(String(36), nullable=False)
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    workspace_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False, index=True)
+    api_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
     name: Mapped[str] = mapped_column(String(160), nullable=False)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     cadence: Mapped[str] = mapped_column(String(16), nullable=False)  # daily, weekly, interval
@@ -34,9 +34,9 @@ class ScheduledScanExecution(Base):
     __tablename__ = "scheduled_scan_executions"
     __table_args__ = (UniqueConstraint("schedule_id", "scheduled_for", name="uq_schedule_execution_slot"),)
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    schedule_id: Mapped[str] = mapped_column(ForeignKey("scheduled_scans.id", ondelete="CASCADE"), nullable=False, index=True)
-    scan_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    schedule_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("scheduled_scans.id", ondelete="CASCADE"), nullable=False, index=True)
+    scan_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False, unique=True)
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

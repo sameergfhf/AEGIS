@@ -7,11 +7,9 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
-    volumes:
-      - sentinel_db:/app
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -23,6 +21,3 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-
-volumes:
-  sentinel_db:

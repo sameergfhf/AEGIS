@@ -1,7 +1,12 @@
-"""Supabase access-token verification and authenticated-user dependencies."""
+"""
+app/api/auth.py — Native JWT token verification, password hashing, and user dependencies.
+"""
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
+import hashlib
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,102 +26,70 @@ class UserContext:
     access_token: str = field(default="", repr=False, compare=False)
 
 
-_jwks_cache: dict[str, Any] = {"url": "", "expires_at": 0.0, "keys": []}
-_jwks_lock = asyncio.Lock()
-_ASYMMETRIC_ALGORITHMS = {"ES256", "ES384", "RS256", "RS384", "RS512", "EdDSA"}
+# ── Password Utilities ────────────────────────────────────────────────────────
 
+def hash_password(password: str) -> str:
+    """Hash a password using salted PBKDF2-HMAC-SHA256."""
+    salt = os.urandom(16).hex()
+    hashed = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
+    return f"{salt}${hashed}"
+
+
+def verify_password(password: str, hashed_password: str | None) -> bool:
+    """Verify password against stored salt$hash string."""
+    if not hashed_password or "$" not in hashed_password:
+        return False
+    try:
+        salt, stored_hash = hashed_password.split("$", 1)
+        calc = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000).hex()
+        return calc == stored_hash
+    except Exception:
+        return False
+
+
+# ── Token Generation ──────────────────────────────────────────────────────────
+
+def create_access_token(user_id: str, email: str | None = None, expires_delta: timedelta | None = None) -> str:
+    """Generate a signed JWT access token."""
+    settings = get_settings()
+    secret = settings.jwt_secret_key or settings.secret_key
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.jwt_expire_minutes))
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+
+
+# ── Token Verification ────────────────────────────────────────────────────────
 
 class TokenVerificationError(Exception):
-    """Raised when a Supabase access token cannot be verified."""
-
-
-async def _fetch_jwks(jwks_url: str, *, force: bool = False) -> list[dict[str, Any]]:
-    now = time.monotonic()
-    if not force and _jwks_cache["url"] == jwks_url and _jwks_cache["expires_at"] > now:
-        return _jwks_cache["keys"]
-
-    async with _jwks_lock:
-        now = time.monotonic()
-        if not force and _jwks_cache["url"] == jwks_url and _jwks_cache["expires_at"] > now:
-            return _jwks_cache["keys"]
-        try:
-            async with httpx.AsyncClient(timeout=5.0, follow_redirects=False) as client:
-                response = await client.get(jwks_url, headers={"Accept": "application/json"})
-                response.raise_for_status()
-                document = response.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            raise TokenVerificationError("Could not retrieve Supabase signing keys.") from exc
-
-        keys = document.get("keys") if isinstance(document, dict) else None
-        if not isinstance(keys, list) or not keys:
-            raise TokenVerificationError("Supabase signing key set is missing or malformed.")
-        cache_seconds = max(30, min(get_settings().supabase_jwks_cache_seconds, 3600))
-        _jwks_cache.update(url=jwks_url, expires_at=now + cache_seconds, keys=keys)
-        return keys
-
-
-async def _verification_key(token: str, header: dict[str, Any]) -> tuple[Any, str]:
-    settings = get_settings()
-    algorithm = header.get("alg")
-    if algorithm == "HS256":
-        if not settings.supabase_jwt_secret:
-            raise TokenVerificationError("Legacy HS256 token verification is not configured.")
-        return settings.supabase_jwt_secret, "HS256"
-
-    if algorithm not in _ASYMMETRIC_ALGORITHMS:
-        raise TokenVerificationError("Unsupported access-token signing algorithm.")
-
-    auth_url = (settings.supabase_auth_url or settings.supabase_url).rstrip("/")
-    if not auth_url:
-        raise TokenVerificationError("Supabase Auth URL is not configured.")
-    jwks_url = f"{auth_url}/auth/v1/.well-known/jwks.json"
-    kid = header.get("kid")
-    if not isinstance(kid, str) or not kid:
-        raise TokenVerificationError("Access token is missing its signing key identifier.")
-
-    keys = await _fetch_jwks(jwks_url)
-    jwk_data = next((item for item in keys if item.get("kid") == kid), None)
-    if jwk_data is None:
-        # A rotated key may appear before the cache expires. Refresh once.
-        keys = await _fetch_jwks(jwks_url, force=True)
-        jwk_data = next((item for item in keys if item.get("kid") == kid), None)
-    if jwk_data is None or jwk_data.get("alg") not in (None, algorithm):
-        raise TokenVerificationError("No matching Supabase signing key was found.")
-    try:
-        return jwt.PyJWK.from_dict(jwk_data, algorithm=algorithm).key, algorithm
-    except (jwt.PyJWTError, ValueError, TypeError) as exc:
-        raise TokenVerificationError("Supabase signing key is invalid.") from exc
+    """Raised when an access token cannot be verified."""
 
 
 async def _verify_access_token(token: str) -> UserContext:
     settings = get_settings()
-    auth_url = (settings.supabase_auth_url or settings.supabase_url).rstrip("/")
-    if not auth_url:
-        raise TokenVerificationError("Supabase Auth URL is not configured.")
+    secret = settings.jwt_secret_key or settings.secret_key
+
+    # Native JWT Verification
     try:
-        header = jwt.get_unverified_header(token)
-        key, algorithm = await _verification_key(token, header)
         claims = jwt.decode(
             token,
-            key=key,
-            algorithms=[algorithm],
-            audience=settings.supabase_jwt_audience,
-            issuer=f"{auth_url}/auth/v1",
-            options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+            key=secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "iat", "sub"]},
             leeway=30,
         )
-        subject = claims.get("sub")
-        if not isinstance(subject, str):
-            raise TokenVerificationError("Access token subject is invalid.")
-        user_id = str(UUID(subject))
-        if claims.get("role") != "authenticated":
-            raise TokenVerificationError("Access token is not an authenticated user token.")
-        email = claims.get("email")
-        return UserContext(id=user_id, email=email if isinstance(email, str) else None, access_token=token)
-    except TokenVerificationError:
-        raise
-    except (jwt.PyJWTError, ValueError, TypeError) as exc:
-        raise TokenVerificationError("Access token is invalid or expired.") from exc
+        sub = claims.get("sub")
+        if not sub:
+            raise TokenVerificationError("Invalid token: missing subject.")
+        return UserContext(id=str(sub), email=claims.get("email"), access_token=token)
+    except jwt.ExpiredSignatureError:
+        raise TokenVerificationError("Access token has expired.")
+    except jwt.InvalidTokenError as exc:
+        raise TokenVerificationError("Access token is invalid.") from exc
 
 
 async def get_current_user_optional(
@@ -137,7 +110,7 @@ async def get_current_user_optional(
 async def get_current_user(
     user: UserContext | None = Depends(get_current_user_optional),
 ) -> UserContext:
-    """Require a verified Supabase Auth user."""
+    """Require a verified user."""
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication is required.")
     return user

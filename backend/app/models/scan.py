@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,7 +16,7 @@ class Scan(Base):
     __tablename__ = "scans"
 
     id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+        Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     hostname: Mapped[str] = mapped_column(String(253), nullable=False)
@@ -50,9 +50,8 @@ class Scan(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # User Ownership (Optional for guest scans, populated for authenticated users)
-    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), nullable=True, index=True)
     user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Workspace / Team association (Optional)
-    workspace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
-
+    workspace_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), nullable=True, index=True)

@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -16,10 +16,10 @@ class Finding(Base):
     __tablename__ = "findings"
 
     id: Mapped[str] = mapped_column(
-        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+        Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     scan_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid(as_uuid=False), ForeignKey("scans.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     title: Mapped[str] = mapped_column(String(256), nullable=False)

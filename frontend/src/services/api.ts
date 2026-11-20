@@ -1,8 +1,4 @@
 import axios, { AxiosError } from 'axios';
-import { supabase } from '../lib/supabase';
-import {
-  persistSpecToSupabase,
-} from './supabaseService';
 import type {
   AlternativesResponse,
   AlternativeScanResult,
@@ -68,16 +64,11 @@ export async function getWorkspaceAnalytics(workspaceId: string, filters: { date
   return data;
 }
 
-// Attach only the bearer token. The API verifies its signature and claims;
-// client-supplied identity headers are never used as authentication.
-api.interceptors.request.use(async (config) => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      config.headers.Authorization = `Bearer ${session.access_token}`;
-    }
-  } catch {
-    // Continue in guest mode
+// Attach the bearer token from localStorage
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('aegis_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -233,12 +224,6 @@ export async function analyzeSpecUrl(url: string): Promise<SpecAnalysis> {
   const { data } = await api.post<SpecAnalysis>('/specifications/analyze', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-
-  // Store spec analysis and reference in Supabase
-  persistSpecToSupabase(null, url, data).catch((err) =>
-    console.warn('Supabase spec persistence error:', err)
-  );
-
   return data;
 }
 
@@ -248,12 +233,6 @@ export async function analyzeSpecFile(file: File): Promise<SpecAnalysis> {
   const { data } = await api.post<SpecAnalysis>('/specifications/analyze', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-
-  // Upload spec file to Supabase Storage & store record in Supabase spec_uploads
-  persistSpecToSupabase(file, null, data).catch((err) =>
-    console.warn('Supabase spec persistence error:', err)
-  );
-
   return data;
 }
 

@@ -3,6 +3,7 @@ app/services/scan_service.py — Orchestrates the full scan pipeline.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -36,22 +37,8 @@ logger = logging.getLogger(__name__)
 
 
 async def _sync_failed_workspace_scan(scan: Scan) -> None:
-    if not scan.user_id:
+    if not scan.user_id or not scan.workspace_id:
         return
-    try:
-        from app.services.supabase_sync import sync_scan_to_supabase
-        synced = await sync_scan_to_supabase(
-            scan_id=scan.id, target_url=scan.url, hostname=scan.hostname, status="failed",
-            score=scan.assessment_score, duration_ms=scan.duration_ms,
-            passed_checks=scan.passed_checks or 0, failed_checks=scan.failed_checks or 0,
-            warning_checks=scan.warning_checks or 0, inconclusive_checks=scan.inconclusive_checks or 0,
-            highest_severity=scan.highest_severity, user_id=scan.user_id, user_email=scan.user_email,
-            workspace_id=scan.workspace_id, findings=[], started_at=scan.started_at.isoformat() if scan.started_at else None,
-            completed_at=scan.completed_at.isoformat() if scan.completed_at else None, result_json=scan.result_json)
-        if not synced:
-            logger.error("Canonical Supabase persistence did not complete for failed scan %s", scan.id)
-    except Exception as exc:
-        logger.exception("Canonical Supabase persistence could not run for failed scan %s: %s", scan.id, exc)
     try:
         from app.services.governance_automation import notify_scan_failure
         await notify_scan_failure(scan.workspace_id, scan.user_id, scan.id)
@@ -149,7 +136,7 @@ async def run_scan(
             follow_redirects=False,
             timeout=settings.request_timeout_seconds,
             max_redirects=0,
-            limits=httpx.Limits(max_connections=1, max_keepalive_connections=0),
+            limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
         ) as client:
             primary_response = await client.request(
                 method,
@@ -244,16 +231,30 @@ async def run_scan(
             await _sync_failed_workspace_scan(scan)
         return
 
-    # ── Step 3: Run security modules concurrently ───────────────────────────
-    # TLS checker is synchronous (uses stdlib ssl)
-    tls_result = await tls_checker.run(url)
-    headers_result = await headers_checker.run(
+    # ── Step 3: Run security modules & latency sampling concurrently ──────
+    tls_task = tls_checker.run(url)
+    headers_task = headers_checker.run(
         response_for_headers
         if response_for_headers is not None
         else _dummy_response(response_headers)
     )
-    leakage_result = await leakage_checker.run(response_body, response_content_type)
-    reputation_result = await reputation_checker.run(url, redirect_destinations)
+    leakage_task = leakage_checker.run(response_body, response_content_type)
+    reputation_task = reputation_checker.run(url, redirect_destinations)
+    latency_task = collect_latency_samples(url, resolved_ip)
+
+    (
+        tls_result,
+        headers_result,
+        leakage_result,
+        reputation_result,
+        latency,
+    ) = await asyncio.gather(
+        tls_task,
+        headers_task,
+        leakage_task,
+        reputation_task,
+        latency_task,
+    )
 
     test_results: Dict[str, TestResult] = {
         "tls": tls_result,
@@ -264,9 +265,6 @@ async def run_scan(
 
     # ── Step 4: Score ───────────────────────────────────────────────────────
     score_result = calculate_score(test_results)
-
-    # ── Step 5: Collect latency samples ─────────────────────────────────────
-    latency = await collect_latency_samples(url, resolved_ip)
 
     # ── Step 6: Build flow graph ─────────────────────────────────────────────
     total_failures = sum(
@@ -389,26 +387,6 @@ async def run_scan(
         "why_it_matters": finding.why_it_matters, "remediation": finding.remediation,
         "rule_reference": finding.rule_reference,
     } for finding in db_findings]
-    if scan.user_id:
-        try:
-            from app.services.supabase_sync import sync_scan_to_supabase
-            synced = await sync_scan_to_supabase(
-                scan_id=scan.id, target_url=scan.url, hostname=scan.hostname, status=scan.status,
-                score=scan.assessment_score, duration_ms=scan.duration_ms,
-                passed_checks=scan.passed_checks, failed_checks=scan.failed_checks,
-                warning_checks=scan.warning_checks, inconclusive_checks=scan.inconclusive_checks,
-                highest_severity=scan.highest_severity, user_id=scan.user_id, user_email=scan.user_email,
-                workspace_id=scan.workspace_id, findings=findings_dicts,
-                visualizations=result_payload.get("visualizations"),
-                started_at=scan.started_at.isoformat() if scan.started_at else None,
-                completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
-                result_json=scan.result_json, earned_points=scan.earned_points,
-                assessed_points=scan.assessed_points, assessment_coverage=scan.assessment_coverage,
-                scan_type="operation" if operation_context else "full")
-            if not synced:
-                logger.error("Canonical Supabase persistence did not complete for scan %s", scan.id)
-        except Exception as exc:
-            logger.exception("Canonical Supabase persistence could not run for scan %s: %s", scan.id, exc)
     if scan.workspace_id:
         try:
             from app.services.governance_automation import process_workspace_scan

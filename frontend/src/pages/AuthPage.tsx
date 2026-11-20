@@ -1,7 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, User, ArrowLeft, ShieldCheck } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import BrandLogo from '../components/BrandLogo';
 import { ThemeToggle } from '../components/ui';
@@ -44,7 +43,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
 
-  const { session } = useAuth();
+  const { session, signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -93,49 +92,29 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (mode === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: { data: { full_name: name.trim(), name: name.trim() } },
-        });
-        if (error) throw error;
-        if (data?.session) {
-          toast.success('Account created. Welcome to AEGIS.');
-          navigate('/dashboard', { replace: true });
-          return;
-        }
-        toast.success('Account created. Check your email to confirm, then sign in.');
-        setMode('signin');
+        await signUp(name.trim(), email.trim(), password);
+        toast.success('Account created. Welcome to AEGIS.');
+        navigate('/dashboard', { replace: true });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (error) throw error;
+        await signIn(email.trim(), password);
         toast.success('Welcome back.');
         navigate('/dashboard', { replace: true });
       }
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Authentication failed.');
+      const msg = axiosErrorDetail(err) || (err instanceof Error ? err.message : 'Authentication failed.');
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleOAuth(provider: 'google' | 'github') {
+  function axiosErrorDetail(err: any): string | null {
+    return err?.response?.data?.detail || null;
+  }
+
+  function handleOAuth(provider: 'google' | 'github') {
     setOauthLoading(provider);
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: provider === 'google' ? { access_type: 'offline', prompt: 'consent' } : {},
-        },
-      });
-      if (error) throw error;
-      if (data?.url) window.location.href = data.url;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : `${provider} sign-in failed.`;
-      toast.error(msg, { duration: 6000 });
-      setOauthLoading(null);
-    }
+    window.location.href = `/api/auth/oauth/${provider}`;
   }
 
   const isSignUp = mode === 'signup';
@@ -371,7 +350,7 @@ export default function AuthPage() {
             </p>
 
             <p className="mt-[clamp(0.5rem,1.8vh,1.5rem)] font-mono text-[9.5px] uppercase leading-relaxed tracking-[0.1em] text-muted [@media(max-height:780px)]:hidden">
-              Sessions are issued by Supabase Auth. Credentials never reach the scan engine.
+              Sessions are issued by native JWT Auth. Credentials never reach the scan engine.
             </p>
           </div>
         </div>

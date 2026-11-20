@@ -12,6 +12,7 @@ Does NOT disable certificate verification to fake a pass.
 """
 from __future__ import annotations
 
+import asyncio
 import ssl
 import socket
 from datetime import datetime, timezone
@@ -108,7 +109,7 @@ async def run(url: str) -> TestResult:
         )
 
     # ── TLS certificate checks (HTTPS only) ────────────────────────────────
-    cert_info = _get_cert_info(hostname, port)
+    cert_info = await asyncio.to_thread(_get_cert_info, hostname, port)
     evidence["tls_info"] = {
         k: v for k, v in (cert_info or {}).items() if k != "cert"
     }

@@ -46,15 +46,16 @@ class Settings(BaseSettings):
     # Reports
     report_retention_days: int = 30
 
-    # Supabase
-    # Workspace Auth and the authenticated scan projection share a Supabase project.
-    supabase_url: str = ""
-    supabase_auth_url: str = ""
-    supabase_auth_anon_key: str = ""
-    supabase_workspace_service_role_key: str = ""
-    supabase_jwt_secret: str = ""
-    supabase_jwt_audience: str = "authenticated"
-    supabase_jwks_cache_seconds: int = 300
+    # OAuth & Native Auth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    frontend_url: str = "http://localhost:5173"
+    backend_url: str = "http://localhost:8000"
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 10080  # 7 days
 
     # Optional evidence-grounded AI provider (OpenAI-compatible Chat Completions API).
     ai_provider_api_key: str = ""

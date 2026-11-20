@@ -30,24 +30,15 @@ async def _execute(schedule_id: str, execution_id: str, scan_id: str) -> None:
             scan = (await db.execute(select(Scan).where(Scan.id == scan_id))).scalar_one_or_none()
             if not row or not scan:
                 return
-            from app.services.supabase_sync import _get_supabase_config
-            base_url, key = _get_supabase_config()
-            if not base_url or not key:
-                raise RuntimeError("Scheduled execution is not configured: set SUPABASE_WORKSPACE_SERVICE_ROLE_KEY from project sjgqmjsszlvimafqwdpi in the backend secret environment, then restart the worker.")
-            headers = {"apikey": key, "Accept": "application/json"}
-            if not key.startswith("sb_secret_"):
-                headers["Authorization"] = f"Bearer {key}"
-            async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
-                api = await client.get(f"{base_url}/rest/v1/workspace_apis", params={"id": f"eq.{row.api_id}", "workspace_id": f"eq.{row.workspace_id}", "select": "base_url,status"}, headers=headers)
-                api.raise_for_status()
-                api_rows = api.json()
-                if not api_rows or api_rows[0].get("status") != "active":
-                    raise RuntimeError("The registered API is no longer active.")
-                from urllib.parse import urlparse
-                scheduled_origin = urlparse(row.url)
-                api_origin = urlparse(api_rows[0].get("base_url", ""))
-                if (scheduled_origin.scheme, scheduled_origin.hostname, scheduled_origin.port) != (api_origin.scheme, api_origin.hostname, api_origin.port):
-                    raise RuntimeError("The scheduled target no longer matches the registered API origin.")
+            from app.models.workspace import WorkspaceApi
+            from urllib.parse import urlparse
+            api_row = (await db.execute(select(WorkspaceApi).where(WorkspaceApi.id == row.api_id, WorkspaceApi.workspace_id == row.workspace_id))).scalar_one_or_none()
+            if not api_row or api_row.status != "active":
+                raise RuntimeError("The registered API is no longer active.")
+            scheduled_origin = urlparse(row.url)
+            api_origin = urlparse(api_row.base_url)
+            if (scheduled_origin.scheme, scheduled_origin.hostname, scheduled_origin.port) != (api_origin.scheme, api_origin.hostname, api_origin.port):
+                raise RuntimeError("The scheduled target no longer matches the registered API origin.")
                 workspace = await client.get(f"{base_url}/rest/v1/workspaces", params={"id": f"eq.{row.workspace_id}", "select": "owner_id"}, headers=headers)
                 workspace.raise_for_status()
                 workspace_rows = workspace.json()

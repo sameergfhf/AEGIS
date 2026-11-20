@@ -71,20 +71,31 @@ async def _single_request(
 
 
 async def collect_latency_samples(url: str, resolved_ip: str) -> LatencyStats:
-    """Run N sequential GET requests and collect latency data."""
+    """Run N timed GET requests and collect latency data with staggered concurrency."""
     n_samples = settings.scan_latency_samples
-    samples: List[LatencyPoint] = []
+    if n_samples <= 0:
+        return LatencyStats(
+            avg_ms=None,
+            min_ms=None,
+            max_ms=None,
+            failed_requests=0,
+            samples=[],
+        )
 
+    # Use connection pooling to allow keepalive reuse across latency samples
     async with httpx.AsyncClient(
         follow_redirects=False,
-        limits=httpx.Limits(max_connections=1),
+        limits=httpx.Limits(max_connections=n_samples, max_keepalive_connections=n_samples),
     ) as client:
-        for i in range(1, n_samples + 1):
-            point = await _single_request(client, url, i, resolved_ip)
-            samples.append(point)
-            if i < n_samples:
-                await asyncio.sleep(0.3)  # Brief pause between samples
+        async def _sample_worker(i: int) -> LatencyPoint:
+            if i > 1:
+                # 40ms stagger to avoid burst rate-limiting while keeping total latency minimal
+                await asyncio.sleep((i - 1) * 0.04)
+            return await _single_request(client, url, i, resolved_ip)
 
+        results = await asyncio.gather(*(_sample_worker(i) for i in range(1, n_samples + 1)))
+
+    samples: List[LatencyPoint] = sorted(list(results), key=lambda p: p.request_number)
     valid_times = [p.response_time_ms for p in samples if p.response_time_ms is not None]
     failed = sum(1 for p in samples if p.response_time_ms is None)
 

@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     backend_url: str = "http://localhost:8000"
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 10080  # 7 days
+    jwt_expire_minutes: int = 1440  # 1 day (24 hours)
 
     # Optional evidence-grounded AI provider (OpenAI-compatible Chat Completions API).
     ai_provider_api_key: str = ""

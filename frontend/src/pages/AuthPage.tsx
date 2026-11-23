@@ -1,6 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, User, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, User, ArrowLeft, ShieldCheck, AlertCircle } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import BrandLogo from '../components/BrandLogo';
 import { ThemeToggle } from '../components/ui';
@@ -43,6 +44,7 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'github' | null>(null);
 
   const { session, signIn, signUp } = useAuth();
@@ -59,6 +61,7 @@ export default function AuthPage() {
     setConfirmPassword('');
     setShowPassword(false);
     setLoading(false);
+    setInlineError(null);
   }
 
   function toggleMode() {
@@ -68,17 +71,24 @@ export default function AuthPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (loading) return;
+    setInlineError(null);
+
     if (mode === 'signup' && !name.trim()) {
-      return toast.error('Please enter your full name.');
+      setInlineError('Please enter your full name.');
+      return;
     }
     if (!email.trim() || !password) {
-      return toast.error('Please fill in all fields.');
+      setInlineError('Please fill in all fields.');
+      return;
     }
     if (mode === 'signup' && password !== confirmPassword) {
-      return toast.error('Passwords do not match.');
+      setInlineError('Passwords do not match.');
+      return;
     }
     if (password.length < 6) {
-      return toast.error('Password must be at least 6 characters.');
+      setInlineError('Password must be at least 6 characters.');
+      return;
     }
 
     setLoading(true);
@@ -93,15 +103,25 @@ export default function AuthPage() {
         navigate('/dashboard', { replace: true });
       }
     } catch (err: unknown) {
-      const msg = axiosErrorDetail(err) || (err instanceof Error ? err.message : 'Authentication failed.');
+      let msg = 'Authentication failed. Please verify your credentials.';
+      if (axios.isAxiosError(err)) {
+        if (err.code === 'ECONNABORTED' || err.message?.toLowerCase().includes('timeout')) {
+          msg = 'Authentication request timed out. Please check your network or server and try again.';
+        } else if (!err.response) {
+          msg = 'Unable to reach the authentication service. Please ensure the backend is running.';
+        } else if (err.response?.data?.detail) {
+          msg = typeof err.response.data.detail === 'string'
+            ? err.response.data.detail
+            : 'Invalid authentication request.';
+        }
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setInlineError(msg);
       toast.error(msg);
     } finally {
       setLoading(false);
     }
-  }
-
-  function axiosErrorDetail(err: any): string | null {
-    return err?.response?.data?.detail || null;
   }
 
   function handleOAuth(provider: 'google' | 'github') {
@@ -236,6 +256,17 @@ export default function AuthPage() {
                 <div className="h-px flex-1 bg-line" />
               </div>
 
+              {/* Inline Error Notice */}
+              {inlineError ? (
+                <div
+                  role="alert"
+                  className="mb-4 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[13px] text-red-600 dark:text-red-400"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span className="flex-1 leading-snug">{inlineError}</span>
+                </div>
+              ) : null}
+
               {/* Credential Form */}
               <form onSubmit={handleSubmit} className="space-y-4">
                 {isSignUp ? (
@@ -251,7 +282,11 @@ export default function AuthPage() {
                         autoComplete="name"
                         placeholder="Alex Morgan"
                         value={name}
-                        onChange={(e) => setName(e.target.value)}
+                        disabled={loading}
+                        onChange={(e) => {
+                          setName(e.target.value);
+                          if (inlineError) setInlineError(null);
+                        }}
                         required
                         className={iconFieldClass}
                       />
@@ -271,7 +306,11 @@ export default function AuthPage() {
                       autoComplete="email"
                       placeholder="name@company.com"
                       value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={loading}
+                      onChange={(e) => {
+                        setEmail(e.target.value);
+                        if (inlineError) setInlineError(null);
+                      }}
                       required
                       className={iconFieldClass}
                     />
@@ -290,12 +329,17 @@ export default function AuthPage() {
                       autoComplete={isSignUp ? 'new-password' : 'current-password'}
                       placeholder="Minimum 6 characters"
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                      onChange={(e) => {
+                        setPassword(e.target.value);
+                        if (inlineError) setInlineError(null);
+                      }}
                       required
                       className={`${iconFieldClass} pr-11`}
                     />
                     <button
                       type="button"
+                      disabled={loading}
                       onClick={() => setShowPassword((v) => !v)}
                       className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
@@ -318,7 +362,11 @@ export default function AuthPage() {
                         autoComplete="new-password"
                         placeholder="Confirm password"
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        disabled={loading}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          if (inlineError) setInlineError(null);
+                        }}
                         required
                         className={`${iconFieldClass} pr-11`}
                       />
@@ -335,7 +383,7 @@ export default function AuthPage() {
                   {loading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      <span>Authenticating…</span>
+                      <span>{isSignUp ? 'Creating account…' : 'Signing in…'}</span>
                     </>
                   ) : (
                     <>

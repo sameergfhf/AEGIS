@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await axios.get('/api/auth/me', {
         headers: { Authorization: `Bearer ${token}` },
+        timeout: 10_000,
       });
       setUser(formatUser(res.data));
       setSession({ access_token: token });
@@ -88,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchCurrentUser]);
 
   const signIn = async (email: string, password: string) => {
-    const res = await axios.post('/api/auth/signin', { email, password });
+    const res = await axios.post('/api/auth/signin', { email, password }, { timeout: 15_000 });
     const { access_token, user: rawUser } = res.data;
     localStorage.setItem('aegis_token', access_token);
     setSession({ access_token });
@@ -96,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUp = async (name: string, email: string, password: string) => {
-    const res = await axios.post('/api/auth/signup', { name, email, password });
+    const res = await axios.post('/api/auth/signup', { name, email, password }, { timeout: 15_000 });
     const { access_token, user: rawUser } = res.data;
     localStorage.setItem('aegis_token', access_token);
     setSession({ access_token });

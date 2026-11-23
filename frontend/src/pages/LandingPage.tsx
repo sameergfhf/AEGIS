@@ -208,7 +208,7 @@ export default function LandingPage() {
 
   return (
     <div className="page-landing refresh-site">
-      <a href="#main-content" className="skip-link">Skip to main content</a>
+      <a href="#main-content" className="skip-link sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50">Skip to main content</a>
       <header className="site-nav">
         <div className="site-nav-inner">
           <BrandLogo to="/" size="sm" subtitle="API security, made clear" />

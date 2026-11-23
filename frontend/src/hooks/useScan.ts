@@ -51,9 +51,14 @@ export function useScan(): UseScanReturn {
   const poll = useCallback((scanId: string) => {
     setIsPolling(true);
     let attempts = 0;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 5;
+    const MAX_POLL_ATTEMPTS = 120; // ~2 to 3 minutes of active polling
+
     const tick = async () => {
       try {
         const updated = await getScan(scanId);
+        consecutiveErrors = 0;
         setScan(updated);
         if (updated.status === 'completed' || updated.status === 'failed') {
           stopPolling();
@@ -64,12 +69,25 @@ export function useScan(): UseScanReturn {
           }
         } else {
           attempts++;
+          if (attempts >= MAX_POLL_ATTEMPTS) {
+            // Pause auto-polling gracefully without marking the scan as failed
+            stopPolling();
+            setError('Scan is taking longer than usual to complete. It remains running in the background—refresh the page to check the latest telemetry.');
+            return;
+          }
           const nextInterval = attempts === 1 ? INITIAL_POLL_INTERVAL_MS : POLL_INTERVAL_MS;
           pollRef.current = setTimeout(tick, nextInterval);
         }
       } catch (err) {
-        setError(getErrorMessage(err));
-        stopPolling();
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          setError(getErrorMessage(err));
+          stopPolling();
+        } else {
+          // Transient network glitch or timeout: retry with slight backoff without failing
+          attempts++;
+          pollRef.current = setTimeout(tick, 2000);
+        }
       }
     };
     tick();

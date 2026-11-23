@@ -101,7 +101,7 @@ export default function Layout({ children }: { children?: React.ReactNode } = {}
     </div>
   );
   return <div className="aegis-shell app-layout">
-    <a className="skip-link" href="#main-content">Skip to main content</a>
+    <a className="skip-link sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50" href="#main-content">Skip to main content</a>
     <aside className="app-sidebar">
       <div className="sidebar-brand"><BrandLogo to="/dashboard" size="md" /><span className="sidebar-version">SECURITY PLATFORM</span></div>
       <button type="button" className="workspace-switch" aria-haspopup="menu" aria-expanded={openMenu === 'workspace'} onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}>

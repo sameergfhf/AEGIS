@@ -115,14 +115,25 @@ export default function ScanResults() {
           <AlertCircle className="mx-auto h-6 w-6 text-critical" aria-hidden="true" />
           <h2 className="mt-3 font-display text-[17px] font-semibold text-ink">Error loading scan</h2>
           <p className="mt-2 text-[11.5px] leading-relaxed text-muted">{error}</p>
-          <Button
-            variant="secondary"
-            size="md"
-            className="mt-5"
-            onClick={() => navigate(session ? '/dashboard' : '/')}
-          >
-            &larr; {session ? 'Back to dashboard' : 'Back to home'}
-          </Button>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => {
+                if (scanId) loadScan(scanId);
+              }}
+            >
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              Retry loading
+            </Button>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => navigate(session ? '/dashboard' : '/')}
+            >
+              &larr; {session ? 'Back to dashboard' : 'Back to home'}
+            </Button>
+          </div>
         </div>
       </div>
     );

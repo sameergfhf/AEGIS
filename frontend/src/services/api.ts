@@ -80,16 +80,20 @@ export async function createScan(
   notes?: string,
   workspaceId?: string | null
 ): Promise<Scan> {
-  const { data } = await api.post<Scan>('/scans', {
-    url,
-    notes,
-    workspace_id: workspaceId || undefined,
-  });
+  const { data } = await api.post<Scan>(
+    '/scans',
+    {
+      url,
+      notes,
+      workspace_id: workspaceId || undefined,
+    },
+    { timeout: 45_000 }
+  );
   return data;
 }
 
 export async function getScan(scanId: string): Promise<Scan> {
-  const { data } = await api.get<Scan>(`/scans/${scanId}`);
+  const { data } = await api.get<Scan>(`/scans/${scanId}`, { timeout: 15_000 });
   return data;
 }
 
@@ -259,6 +263,16 @@ export async function scanOperation(req: OperationScanRequest): Promise<Scan> {
  */
 export function getErrorMessage(error: unknown): string {
   if (error instanceof AxiosError) {
+    if (error.code === 'ECONNABORTED' || error.message?.toLowerCase().includes('timeout')) {
+      return 'The request timed out while contacting the server. The scan or service may still be processing in the background.';
+    }
+    if (error.response?.status === 504) {
+      return 'Gateway timeout: the backend server took too long to complete the scan evaluation.';
+    }
+    if (error.response?.status === 502 || error.response?.status === 503) {
+      return 'Security analysis service is temporarily unavailable. Please verify the Docker backend container is running.';
+    }
+
     const detail = error.response?.data?.detail;
 
     // Pydantic v2 returns an array of {loc, msg, type} objects

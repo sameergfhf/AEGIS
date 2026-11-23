@@ -1,5 +1,5 @@
 import { useState, useEffect, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, Loader2, User, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import BrandLogo from '../components/BrandLogo';
@@ -28,13 +28,15 @@ function GoogleIcon() {
 }
 
 const fieldClass =
-  'min-h-12 w-full rounded-[6px] border border-line-strong bg-paper py-3 text-[15px] text-ink outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-muted focus:border-forest focus:shadow-[0_0_0_3px_color-mix(in_srgb,var(--aegis-focus)_14%,transparent)]';
-const iconFieldClass = `${fieldClass} pl-11 pr-4`;
+  'h-11 w-full rounded-xl border border-line bg-paper px-3.5 text-[13.5px] font-sans text-ink outline-none transition-all duration-150 placeholder:text-muted focus:border-forest focus:ring-2 focus:ring-forest/20';
+const iconFieldClass = `${fieldClass} pl-10 pr-4`;
 const oauthClass =
-  'flex min-h-11 items-center justify-center gap-2.5 rounded-[6px] border border-line-strong bg-paper px-3 text-[12.5px] font-medium text-ink transition-colors hover:border-ink hover:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] disabled:cursor-not-allowed disabled:opacity-50';
+  'flex h-11 items-center justify-center gap-2.5 rounded-xl border border-line bg-canvas px-4 text-xs font-semibold text-ink transition-all hover:bg-elevated hover:border-line-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest disabled:cursor-not-allowed disabled:opacity-50';
 
 export default function AuthPage() {
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const [searchParams] = useSearchParams();
+  const initialMode: AuthMode = searchParams.get('mode') === 'signup' ? 'signup' : 'signin';
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,16 +51,6 @@ export default function AuthPage() {
   useEffect(() => {
     if (session) navigate('/dashboard', { replace: true });
   }, [session, navigate]);
-
-  // The auth screen is a fixed, single-viewport composition — never a scroll surface.
-  useEffect(() => {
-    const { body } = document;
-    const previousOverflow = body.style.overflow;
-    body.style.overflow = 'hidden';
-    return () => {
-      body.style.overflow = previousOverflow;
-    };
-  }, []);
 
   function resetState() {
     setName('');
@@ -120,241 +112,259 @@ export default function AuthPage() {
   const isSignUp = mode === 'signup';
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-canvas lg:grid lg:grid-cols-[1.02fr_1fr] page-auth">
-      <a href="#main-content" className="skip-link">
+    <div className="relative min-h-screen bg-canvas text-ink page-auth">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-forest focus:px-4 focus:py-2 focus:text-xs focus:font-mono focus:text-white focus:shadow-xl focus:outline-none"
+      >
         Skip to main content
       </a>
 
-      <aside className="aegis-invert relative hidden overflow-hidden p-10 lg:flex lg:flex-col xl:p-14">
-        <div className="aegis-glow pointer-events-none absolute inset-0 opacity-70" aria-hidden="true" />
-        <div className="aegis-grid-bg pointer-events-none absolute inset-0 opacity-[0.14]" aria-hidden="true" />
-        <div className="relative z-10">
-          <BrandLogo to="/" size="md" subtitle="Operator console" inverted />
-        </div>
+      <div className="grid min-h-screen w-full lg:grid-cols-[1.1fr_1fr]">
+        {/* Left Column: Brand Context & Ledger Details (Desktop) */}
+        <aside className="relative hidden overflow-hidden border-r border-line bg-elevated/40 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-20 dark:opacity-30 [background-image:radial-gradient(rgba(16,185,129,0.18)_1px,transparent_1px)] [background-size:24px_24px]"
+            aria-hidden="true"
+          />
+          <div
+            className="pointer-events-none absolute -left-20 -top-20 h-72 w-72 rounded-full bg-forest/15 blur-3xl"
+            aria-hidden="true"
+          />
 
-        <div className="relative z-10 my-auto max-w-[30rem] py-[clamp(1rem,5vh,3rem)]">
-          <p className="aegis-eyebrow">Restricted workspace</p>
-          <h1 className="mt-[clamp(1rem,3vh,1.5rem)] font-display text-[clamp(1.8rem,min(4vw,4.6vh),3.6rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-ink">
-            Every scan is a record.
-            <br />
-            Every record is evidence.
-          </h1>
-          <p className="mt-[clamp(0.75rem,2.4vh,1.5rem)] max-w-[42ch] text-[14px] leading-relaxed text-muted">
-            Sign in to run probes, keep an auditable history, and coordinate remediation with your team.
-          </p>
-
-          <dl className="mt-[clamp(1.25rem,4vh,2.5rem)] hidden border-t border-line [@media(min-height:760px)]:block">
-            {[
-              { n: '01', label: 'Non-destructive probes', detail: 'No fuzzing, no writes, no payloads.' },
-              { n: '02', label: 'SSRF-guarded targets', detail: 'Private and reserved ranges rejected.' },
-              { n: '03', label: 'Evidence-linked findings', detail: 'Every score traces to an observation.' },
-            ].map((item) => (
-              <div key={item.n} className="grid grid-cols-[32px_1fr] gap-3 border-b border-line py-4">
-                <dt className="font-mono text-[10px] tracking-[0.1em] text-muted">{item.n}</dt>
-                <div>
-                  <dt className="text-[13px] font-medium text-ink">{item.label}</dt>
-                  <dd className="mt-1 font-mono text-[10px] leading-relaxed text-muted">{item.detail}</dd>
-                </div>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <div className="relative z-10 flex items-center gap-2 font-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">
-          <ShieldCheck className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
-          TLS 1.3 · encrypted at rest · zero payloads
-        </div>
-      </aside>
-
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden outline-none"
-      >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5 sm:px-8 lg:justify-end lg:border-b-0">
-          <div className="lg:hidden">
-            <BrandLogo to="/" size="sm" subtitle="Operator console" />
+          <div className="relative z-10">
+            <BrandLogo to="/" size="md" subtitle="Operator console" />
           </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/"
-              className="hidden min-h-10 items-center gap-1.5 px-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted hover:text-ink sm:inline-flex"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-              Public site
-            </Link>
-            <ThemeToggle />
-          </div>
-        </div>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden px-5 py-[clamp(0.75rem,3vh,2.5rem)] sm:px-8">
-          <div className="aegis-auth-stage w-full max-w-[420px]">
-            <p className="aegis-eyebrow">Authentication / operator access</p>
-            <h1 className="mt-[clamp(0.5rem,1.8vh,1rem)] font-display text-[clamp(1.5rem,min(4.4vw,4.2vh),2.5rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-ink">
-              {isSignUp ? 'Create an operator account.' : 'Sign in to the console.'}
+          <div className="relative z-10 my-auto max-w-[32rem] py-10">
+            <p className="aegis-eyebrow">Restricted workspace</p>
+            <h1 className="mt-3 font-sans text-4xl font-bold leading-[1.1] tracking-[-0.03em] text-ink xl:text-5xl">
+              Every scan is a record.
+              <br />
+              Every record is evidence.
             </h1>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-muted [@media(max-height:700px)]:hidden">
-              {isSignUp
-                ? 'One account for scans, history, OpenAPI operations, and team workspaces.'
-                : 'Resume your workspaces, scan history, and posture telemetry.'}
+            <p className="mt-4 max-w-[42ch] text-[14.5px] leading-relaxed text-muted">
+              Sign in to run probes, keep an auditable history, and coordinate remediation with your team.
             </p>
 
-            <div className="mt-[clamp(0.75rem,2.6vh,2rem)] grid grid-cols-2 gap-2">
-              <button
-                id="auth-google-btn"
-                type="button"
-                onClick={() => handleOAuth('google')}
-                disabled={oauthLoading !== null}
-                className={oauthClass}
-              >
-                {oauthLoading === 'google' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GoogleIcon />}
-                Google
-              </button>
-              <button
-                id="auth-github-btn"
-                type="button"
-                onClick={() => handleOAuth('github')}
-                disabled={oauthLoading !== null}
-                className={oauthClass}
-              >
-                {oauthLoading === 'github' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GitHubIcon />}
-                GitHub
-              </button>
-            </div>
+            <dl className="mt-8 border-t border-line">
+              {[
+                { n: '01', label: 'Non-destructive probes', detail: 'No fuzzing, no writes, no payloads.' },
+                { n: '02', label: 'SSRF-guarded targets', detail: 'Private and reserved ranges rejected.' },
+                { n: '03', label: 'Evidence-linked findings', detail: 'Every score traces to an observation.' },
+              ].map((item) => (
+                <div key={item.n} className="grid grid-cols-[36px_1fr] gap-3 border-b border-line py-3.5">
+                  <dt className="font-mono text-[11px] tracking-[0.1em] text-muted">{item.n}</dt>
+                  <div>
+                    <dt className="text-[13.5px] font-medium text-ink">{item.label}</dt>
+                    <dd className="mt-0.5 font-mono text-[11px] leading-relaxed text-muted">{item.detail}</dd>
+                  </div>
+                </div>
+              ))}
+            </dl>
+          </div>
 
-            <div className="my-[clamp(0.5rem,2vh,1.5rem)] flex items-center gap-3">
-              <div className="h-px flex-1 bg-line" />
-              <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-muted">or email credentials</span>
-              <div className="h-px flex-1 bg-line" />
-            </div>
+          <div className="relative z-10 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+            <ShieldCheck className="h-4 w-4 text-accent" aria-hidden="true" />
+            TLS 1.3 · encrypted at rest · zero payloads
+          </div>
+        </aside>
 
-            <form onSubmit={handleSubmit} className="space-y-[clamp(0.375rem,1.4vh,1rem)]">
-              {isSignUp ? (
-                <div className="space-y-1.5">
-                  <label htmlFor="auth-name" className="aegis-label block !text-ink">
-                    Full name
+        {/* Right Column: Interactive Authentication Form */}
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className="flex min-h-screen w-full flex-col bg-canvas outline-none"
+        >
+          {/* Header Bar */}
+          <header className="flex h-16 shrink-0 items-center justify-between border-b border-line/60 px-6 sm:px-10 lg:justify-end lg:border-b-0">
+            <div className="lg:hidden">
+              <BrandLogo to="/" size="sm" subtitle="Operator console" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Link
+                to="/"
+                className="hidden min-h-9 items-center gap-1.5 px-3 font-mono text-[11px] uppercase tracking-[0.1em] text-muted hover:text-ink sm:inline-flex"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+                Public site
+              </Link>
+              <ThemeToggle />
+            </div>
+          </header>
+
+          {/* Centered Form Container */}
+          <div className="flex flex-1 items-center justify-center p-6 sm:p-10">
+            <div className="w-full max-w-[440px] rounded-2xl border border-line bg-paper p-6 sm:p-8 shadow-card">
+              <p className="aegis-eyebrow">Authentication / operator access</p>
+              <h1 className="mt-2 font-sans text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+                {isSignUp ? 'Create an operator account.' : 'Sign in to the console.'}
+              </h1>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+                {isSignUp
+                  ? 'One account for scans, history, OpenAPI operations, and team workspaces.'
+                  : 'Resume your workspaces, scan history, and posture telemetry.'}
+              </p>
+
+              {/* OAuth Buttons Row */}
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <button
+                  id="auth-google-btn"
+                  type="button"
+                  onClick={() => handleOAuth('google')}
+                  disabled={oauthLoading !== null}
+                  className={oauthClass}
+                >
+                  {oauthLoading === 'google' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GoogleIcon />}
+                  <span>Google</span>
+                </button>
+                <button
+                  id="auth-github-btn"
+                  type="button"
+                  onClick={() => handleOAuth('github')}
+                  disabled={oauthLoading !== null}
+                  className={oauthClass}
+                >
+                  {oauthLoading === 'github' ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <GitHubIcon />}
+                  <span>GitHub</span>
+                </button>
+              </div>
+
+              <div className="my-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-line" />
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">or email credentials</span>
+                <div className="h-px flex-1 bg-line" />
+              </div>
+
+              {/* Credential Form */}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {isSignUp ? (
+                  <div>
+                    <label htmlFor="auth-name" className="block text-xs font-semibold uppercase tracking-wider text-ink mb-1.5">
+                      Full name
+                    </label>
+                    <div className="relative">
+                      <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                      <input
+                        id="auth-name"
+                        type="text"
+                        autoComplete="name"
+                        placeholder="Alex Morgan"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        className={iconFieldClass}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                <div>
+                  <label htmlFor="auth-email" className="block text-xs font-semibold uppercase tracking-wider text-ink mb-1.5">
+                    Email address
                   </label>
                   <div className="relative">
-                    <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
                     <input
-                      id="auth-name"
-                      type="text"
-                      autoComplete="name"
-                      placeholder="Alex Morgan"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      id="auth-email"
+                      type="email"
+                      autoComplete="email"
+                      placeholder="name@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                       className={iconFieldClass}
                     />
                   </div>
                 </div>
-              ) : null}
 
-              <div className="space-y-1.5">
-                <label htmlFor="auth-email" className="aegis-label block !text-ink">
-                  Email address
-                </label>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-                  <input
-                    id="auth-email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="name@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    className={`${iconFieldClass} font-mono text-[13px]`}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="auth-password" className="aegis-label block !text-ink">
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-                  <input
-                    id="auth-password"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                    placeholder="Minimum 6 characters"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className={`${iconFieldClass} pr-12 font-mono text-[13px]`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-                  </button>
-                </div>
-              </div>
-
-              {isSignUp ? (
-                <div className="space-y-1.5">
-                  <label htmlFor="auth-confirm-password" className="aegis-label block !text-ink">
-                    Confirm password
+                <div>
+                  <label htmlFor="auth-password" className="block text-xs font-semibold uppercase tracking-wider text-ink mb-1.5">
+                    Password
                   </label>
                   <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
                     <input
-                      id="auth-confirm-password"
+                      id="auth-password"
                       type={showPassword ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      placeholder="Confirm password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                      placeholder="Minimum 6 characters"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
                       required
-                      className={`${iconFieldClass} font-mono text-[13px]`}
+                      className={`${iconFieldClass} pr-11`}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                    </button>
                   </div>
                 </div>
-              ) : null}
 
-              <button
-                id="auth-password-submit-btn"
-                type="submit"
-                disabled={loading}
-                className="aegis-primary-action mt-1 min-h-12 w-full px-4 text-[13px] disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    Authenticating…
-                  </>
-                ) : (
-                  <>
-                    {isSignUp ? 'Create account' : 'Sign in with password'}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </>
-                )}
-              </button>
-            </form>
+                {isSignUp ? (
+                  <div>
+                    <label htmlFor="auth-confirm-password" className="block text-xs font-semibold uppercase tracking-wider text-ink mb-1.5">
+                      Confirm password
+                    </label>
+                    <div className="relative">
+                      <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
+                      <input
+                        id="auth-confirm-password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        placeholder="Confirm password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        className={`${iconFieldClass} pr-11`}
+                      />
+                    </div>
+                  </div>
+                ) : null}
 
-            <p className="mt-[clamp(0.5rem,2.2vh,1.5rem)] border-t border-line pt-[clamp(0.6rem,1.6vh,1.25rem)] text-[12.5px] text-muted">
-              {isSignUp ? 'Already have an account? ' : 'No account yet? '}
-              <button
-                id="auth-mode-toggle"
-                type="button"
-                onClick={toggleMode}
-                className="inline-flex min-h-6 items-center font-medium text-ink underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-forest"
-              >
-                {isSignUp ? 'Sign in instead' : 'Create one'}
-              </button>
-            </p>
+                <button
+                  id="auth-password-submit-btn"
+                  type="submit"
+                  disabled={loading}
+                  className="aegis-primary-action mt-2 h-11 w-full rounded-xl text-xs font-bold disabled:opacity-50"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>Authenticating…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>{isSignUp ? 'Create account' : 'Sign in with password'}</span>
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </>
+                  )}
+                </button>
+              </form>
 
-            <p className="mt-[clamp(0.5rem,1.8vh,1.5rem)] font-mono text-[9.5px] uppercase leading-relaxed tracking-[0.1em] text-muted [@media(max-height:780px)]:hidden">
-              Sessions are issued by native JWT Auth. Credentials never reach the scan engine.
-            </p>
+              <div className="mt-6 border-t border-line pt-4 text-center text-[13px] text-muted">
+                {isSignUp ? 'Already have an account? ' : 'No account yet? '}
+                <button
+                  id="auth-mode-toggle"
+                  type="button"
+                  onClick={toggleMode}
+                  className="font-semibold text-forest underline decoration-line-strong underline-offset-4 transition-colors hover:decoration-forest"
+                >
+                  {isSignUp ? 'Sign in instead' : 'Create one'}
+                </button>
+              </div>
+
+              <p className="mt-4 text-center font-mono text-[10px] uppercase leading-relaxed tracking-[0.08em] text-muted">
+                Sessions are issued by native JWT Auth. Credentials never reach the scan engine.
+              </p>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

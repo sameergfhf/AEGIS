@@ -7,6 +7,7 @@ import {
   AlertCircle,
   RefreshCw,
   Shield,
+  ShieldCheck,
   LogIn,
   Search,
   Clock,
@@ -18,6 +19,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -207,18 +209,18 @@ export default function ScanResults() {
 
           <p className="mt-2 max-w-2xl break-all font-mono text-[12px] text-muted">{scan.url}</p>
 
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-line pt-3 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted">
-            <span>
-              Status <span className="text-ink">{scan.status}</span>
+          <div className="scan-meta-row mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+            <span className="scan-meta-chip">
+              Status <span className="text-ink font-semibold">{scan.status}</span>
             </span>
-            <span>
-              Vectors <span className="tabular-nums text-ink">{vectorCount}/4</span>
+            <span className="scan-meta-chip">
+              Vectors <span className="tabular-nums text-ink font-semibold">{vectorCount}/4</span>
             </span>
-            <span>
-              Findings <span className="tabular-nums text-ink">{findings.length}</span>
+            <span className="scan-meta-chip">
+              Findings <span className="tabular-nums text-ink font-semibold">{findings.length}</span>
             </span>
-            <span>
-              Scan ID <span className="text-ink">{scan.id.slice(0, 8)}</span>
+            <span className="scan-meta-chip">
+              Scan ID <span className="text-ink font-semibold">{scan.id.slice(0, 8)}</span>
             </span>
           </div>
         </div>
@@ -275,7 +277,7 @@ export default function ScanResults() {
         >
           <div className="aegis-panel-head">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center border border-line-strong bg-canvas">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-canvas">
                 <Shield className="h-4 w-4 text-forest" aria-hidden="true" />
               </span>
               <div className="min-w-0">
@@ -285,20 +287,38 @@ export default function ScanResults() {
                 </p>
               </div>
             </div>
-            <Badge variant="cyan" size="xs" pulse>
-              Running
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="cyan" size="xs" pulse>
+                Running
+              </Badge>
+            </div>
           </div>
 
-          <div className="px-4 py-4 sm:px-5">
-            <p className="break-all font-mono text-[11px] text-muted">{scan.url}</p>
-            <ol className="mt-4 grid gap-px bg-line sm:grid-cols-4">
-              {TEST_ORDER.map((key) => (
-                <li key={key} className="flex items-center gap-2 bg-paper px-3 py-2.5">
-                  <span className="aegis-live-dot aegis-live-dot--pulse" aria-hidden="true" />
-                  <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+          <div className="p-5 pb-7">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-forest animate-ping" />
+                <p className="break-all font-mono text-[12px] text-muted">{scan.url}</p>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[11px] text-forest">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Executing telemetry probes…</span>
+              </div>
+            </div>
+
+            <ol className="traceflow-pipeline mt-4 grid gap-3 sm:grid-cols-4">
+              {TEST_ORDER.map((key, idx) => (
+                <li key={key} className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-canvas p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold text-forest">0{idx + 1}</span>
+                    <span className="h-2 w-2 rounded-full bg-forest animate-pulse" aria-hidden="true" />
+                  </div>
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-ink">
                     {VECTOR_LABELS[key]}
                   </span>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+                    <div className="h-full w-3/4 rounded-full bg-forest animate-pulse" />
+                  </div>
                 </li>
               ))}
             </ol>
@@ -323,6 +343,24 @@ export default function ScanResults() {
 
       {scan.status === 'completed' ? (
         <div className="report-workspace">
+          <nav className="report-section-nav" aria-label="Report sections">
+            <a href="#report-overview">
+              <span>01</span> Overview &amp; capture
+            </a>
+            <a href="#report-category">
+              <span>02</span> Endpoint profile
+            </a>
+            <a href="#report-vectors">
+              <span>03</span> Vector evaluations <b>{vectorCount}</b>
+            </a>
+            <a href="#report-telemetry">
+              <span>04</span> Telemetry &amp; behavior
+            </a>
+            <a href="#report-findings">
+              <span>05</span> Disclosed findings <b>{findings.length}</b>
+            </a>
+          </nav>
+
           <div className="report-workspace-content">
           <section id="report-overview" className="grid items-stretch gap-4 xl:grid-cols-2" aria-label="Score and capture">
             <ScoreCard
@@ -389,36 +427,36 @@ export default function ScanResults() {
             ) : null}
 
             {visualizations ? (
-              <>
-                <div className="grid items-start gap-4 xl:grid-cols-2">
-                  <LatencyChart latency={visualizations.latency} />
-                  <FindingsChart
-                    findingsBySeverity={visualizations.findings_by_severity}
-                    findings={findings}
-                  />
-                </div>
-
-                <FlowDiagram flow={visualizations.flow} />
-              </>
+              <div className="grid items-start gap-4 xl:grid-cols-2">
+                <LatencyChart latency={visualizations.latency} />
+                <FindingsChart
+                  findingsBySeverity={visualizations.findings_by_severity}
+                  findings={findings}
+                />
+              </div>
             ) : null}
+
+            {/* API Behavior Flow — Always Visibly Rendered with Request Lifecycle Node Diagram */}
+            <FlowDiagram flow={visualizations?.flow ?? { nodes: [], edges: [] }} />
           </section>
 
-          {findings.length > 0 ? (
-            <section id="report-findings" aria-labelledby="findings-heading" className="space-y-3">
-              <div className="flex flex-col justify-between gap-3 border-b border-line pb-3 sm:flex-row sm:items-end">
-                <div>
-                  <p className="aegis-eyebrow">Findings / advisory</p>
-                  <h2
-                    id="findings-heading"
-                    className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink"
-                  >
-                    Disclosed findings &amp; remediation
-                  </h2>
-                  <p className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
-                    {findings.length} total across all vectors
-                  </p>
-                </div>
+          {/* Disclosed Findings & Remediation — Always Visibly Rendered */}
+          <section id="report-findings" aria-labelledby="findings-heading" className="space-y-4">
+            <div className="flex flex-col justify-between gap-3 border-b border-line pb-3 sm:flex-row sm:items-end">
+              <div>
+                <p className="aegis-eyebrow">Findings / advisory</p>
+                <h2
+                  id="findings-heading"
+                  className="mt-1.5 font-sans text-[17px] font-bold tracking-tight text-ink"
+                >
+                  Disclosed findings &amp; remediation
+                </h2>
+                <p className="mt-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-muted">
+                  {findings.length} total across all vectors
+                </p>
+              </div>
 
+              {findings.length > 0 ? (
                 <div
                   role="group"
                   aria-label="Filter findings by severity"
@@ -437,7 +475,7 @@ export default function ScanResults() {
                         type="button"
                         aria-pressed={active}
                         onClick={() => setSeverityFilter(sev)}
-                        className={`flex min-h-9 items-center gap-1 border px-2 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
+                        className={`flex min-h-9 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${
                           active
                             ? 'border-ink bg-ink text-canvas'
                             : 'border-line bg-paper text-muted hover:text-ink'
@@ -451,9 +489,21 @@ export default function ScanResults() {
                     );
                   })}
                 </div>
-              </div>
+              ) : null}
+            </div>
 
-              <div className="aegis-panel overflow-hidden">
+            {findings.length === 0 ? (
+              <div className="aegis-panel rounded-2xl border border-line bg-paper p-8 text-center shadow-xs">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-safe/10 text-safe">
+                  <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <h3 className="mt-3 font-sans text-[16px] font-bold text-ink">Zero vulnerabilities disclosed</h3>
+                <p className="mt-1.5 max-w-md mx-auto text-[13px] leading-relaxed text-muted">
+                  All evaluated security vectors met the baseline requirements with zero failing checks or exposed secrets.
+                </p>
+              </div>
+            ) : (
+              <div className="aegis-panel overflow-hidden rounded-2xl border border-line shadow-xs">
                 <div className="border-b border-line bg-canvas p-3 sm:px-4">
                   <div className="aegis-input-shell max-w-sm gap-2.5 px-3">
                     <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
@@ -593,8 +643,8 @@ export default function ScanResults() {
                   )}
                 </div>
               </div>
-            </section>
-          ) : null}
+            )}
+          </section>
           </div>
         </div>
       ) : null}

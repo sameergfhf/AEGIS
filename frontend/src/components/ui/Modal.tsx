@@ -7,7 +7,7 @@ export interface ModalProps {
   title?: React.ReactNode;
   description?: React.ReactNode;
   children: React.ReactNode;
-  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '4xl';
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl';
 }
 
 export function Modal({
@@ -32,7 +32,8 @@ export function Modal({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
-    const focusableSelector = 'a[href], button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusableSelector =
+      'a[href], button:not([disabled]):not([tabindex="-1"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const dialog = dialogRef.current;
     const firstFocusable = dialog?.querySelector<HTMLElement>(focusableSelector);
     (firstFocusable || dialog)?.focus();
@@ -44,7 +45,9 @@ export function Modal({
         return;
       }
       if (event.key !== 'Tab' || !dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter((el) => el.offsetParent !== null);
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (el) => el.offsetParent !== null,
+      );
       if (focusable.length === 0) {
         event.preventDefault();
         dialog.focus();
@@ -73,12 +76,22 @@ export function Modal({
     lg: 'max-w-lg',
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
     '4xl': 'max-w-4xl',
-  }[maxWidth];
+  }[maxWidth] || 'max-w-lg';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-6">
-      <button type="button" className="fixed inset-0 cursor-default bg-[var(--aegis-scrim)]" onClick={onClose} aria-label="Close dialog overlay" tabIndex={-1} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-3 sm:p-6">
+      {/* Heavy, blurred isolated backdrop preventing underlying bleed-through */}
+      <button
+        type="button"
+        className="fixed inset-0 cursor-default bg-black/75 backdrop-blur-md transition-opacity duration-200"
+        onClick={onClose}
+        aria-label="Close dialog overlay"
+        tabIndex={-1}
+      />
+
+      {/* Modal Dialog Card */}
       <div
         ref={dialogRef}
         role="dialog"
@@ -87,25 +100,36 @@ export function Modal({
         aria-describedby={description ? descriptionId : undefined}
         aria-label={!title ? 'Dialog' : undefined}
         tabIndex={-1}
-        className={`relative z-10 my-auto flex max-h-[calc(100vh-2rem)] w-full ${maxWidthClasses} flex-col overflow-hidden rounded-[14px] border border-line-strong bg-paper shadow-[var(--shadow-overlay)]`}
+        className={`relative z-10 my-auto flex max-h-[calc(100vh-2.5rem)] w-full ${maxWidthClasses} flex-col overflow-hidden rounded-2xl border border-line-strong bg-paper shadow-2xl`}
       >
-        {(title || description) ? (
-          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
-            <div className="min-w-0">
-              {title ? <h2 id={titleId} className="font-display text-lg font-semibold text-ink">{title}</h2> : null}
-              {description ? <p id={descriptionId} className="mt-1 text-sm leading-relaxed text-muted">{description}</p> : null}
+        {title || description ? (
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-line bg-paper px-6 py-5 sm:px-7">
+            <div className="min-w-0 flex-1">
+              {title ? (
+                <div id={titleId} className="font-sans text-lg font-semibold text-ink">
+                  {title}
+                </div>
+              ) : null}
+              {description ? (
+                <p id={descriptionId} className="mt-1 text-sm leading-relaxed text-muted">
+                  {description}
+                </p>
+              ) : null}
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
               aria-label="Close dialog"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
         ) : null}
-        <div className="overflow-y-auto p-5 sm:p-6">{children}</div>
+
+        <div className="flex-1 overflow-y-auto overscroll-contain bg-paper p-6 sm:p-7">
+          {children}
+        </div>
       </div>
     </div>
   );

@@ -621,21 +621,57 @@ function OperationScanInner({ state }: { state: OperationScanLocationState }) {
       ) : null}
 
       {scanning && scan ? (
-        <div
-          className="aegis-reveal mt-4 flex items-center gap-3.5 border border-line-strong bg-canvas px-4 py-4"
+        <section
+          className="aegis-panel aegis-reveal mt-4 border-line-strong"
           aria-live="polite"
           aria-busy="true"
+          aria-label="Scan in progress"
         >
-          <Loader2 className="h-6 w-6 shrink-0 animate-spin text-forest" aria-hidden="true" />
-          <div>
-            <p className="font-display text-[13px] font-semibold text-ink">
-              Analyzing operation observable signals
-            </p>
-            <p className="mt-0.5 text-[11.5px] text-muted">
+          <div className="aegis-panel-head">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line-strong bg-canvas">
+                <Loader2 className="h-4 w-4 animate-spin text-forest" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="aegis-eyebrow">Live / probe</p>
+                <p className="mt-0.5 font-display text-[13px] font-semibold text-ink">
+                  Analyzing operation observable signals
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant="cyan" size="xs" pulse>
+                Running
+              </Badge>
+            </div>
+          </div>
+          <div className="p-4 sm:p-5 pb-7">
+            <p className="text-[11.5px] text-muted">
               Probing TLS parameters, security headers, server banners, and threat intelligence.
             </p>
+            <ol className="traceflow-pipeline mt-4 grid gap-3 sm:grid-cols-4">
+              {[
+                { n: '01', title: 'Transport / TLS' },
+                { n: '02', title: 'Policy / headers' },
+                { n: '03', title: 'Disclosure / leakage' },
+                { n: '04', title: 'Intel / reputation' },
+              ].map((stage) => (
+                <li key={stage.n} className="flex flex-col justify-between gap-3 rounded-xl border border-line bg-canvas p-3.5 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] font-bold text-forest">{stage.n}</span>
+                    <span className="h-2 w-2 rounded-full bg-forest animate-pulse" aria-hidden="true" />
+                  </div>
+                  <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-ink">
+                    {stage.title}
+                  </span>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+                    <div className="h-full w-3/4 rounded-full bg-forest animate-pulse" />
+                  </div>
+                </li>
+              ))}
+            </ol>
           </div>
-        </div>
+        </section>
       ) : null}
 
       {scan?.status === 'completed' ? (

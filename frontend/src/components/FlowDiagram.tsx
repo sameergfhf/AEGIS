@@ -592,7 +592,7 @@ function FlowDiagramInner({ flow }: Props) {
         <span className="aegis-flow-node-count">{flow.nodes.length} stages</span>
       </div>
 
-      <div className="aegis-flow-canvas">
+      <div className="aegis-flow-canvas relative h-[480px] min-h-[420px] w-full">
         <ReactFlow
           nodes={layoutedNodes}
           edges={layoutedEdges}

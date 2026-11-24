@@ -233,15 +233,15 @@ export default function Settings() {
           </p>
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-          <div className="flex min-h-9 flex-1 items-center gap-2 border border-line bg-paper px-2.5 sm:flex-initial">
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+          <div className="flex min-h-10 items-center gap-2.5 rounded-xl border border-line bg-paper px-3 shadow-xs">
             <span
-              className={`h-1.5 w-1.5 shrink-0 ${
-                isLoading ? 'bg-medium' : coreOk ? 'aegis-live-dot' : 'bg-critical'
+              className={`h-2 w-2 rounded-full shrink-0 ${
+                isLoading ? 'bg-amber-500 animate-pulse' : coreOk ? 'bg-emerald-500' : 'bg-red-500'
               }`}
               aria-hidden="true"
             />
-            <span className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-[0.08em] text-ink">
               {isLoading
                 ? 'Pinging core…'
                 : coreOk
@@ -249,7 +249,7 @@ export default function Settings() {
                   : 'Core unreachable'}
             </span>
             {latencyMs !== null ? (
-              <span className="border-l border-line pl-2 font-mono text-[9.5px] tabular-nums text-forest">
+              <span className="border-l border-line pl-2.5 font-mono text-[11px] font-semibold tabular-nums text-forest">
                 {latencyMs}ms
               </span>
             ) : null}
@@ -257,10 +257,10 @@ export default function Settings() {
 
           <Button
             variant="outline"
-            size="sm"
+            size="md"
             onClick={() => fetchHealth(true)}
             disabled={isRefreshing || isLoading}
-            icon={<RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />}
+            leftIcon={<RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />}
           >
             Re-ping
           </Button>
@@ -268,9 +268,9 @@ export default function Settings() {
       </header>
 
       <nav className="settings-section-nav" aria-label="Settings sections">
-        <a href="#settings-runtime">Service health</a>
-        <a href="#settings-guardrails">Security controls</a>
-        <a href="#settings-environment">Configuration</a>
+        <a href="#settings-runtime" className="settings-nav-tab">Service health</a>
+        <a href="#settings-guardrails" className="settings-nav-tab">Security controls</a>
+        <a href="#settings-environment" className="settings-nav-tab">Configuration</a>
       </nav>
 
       <section id="settings-runtime" aria-labelledby="runtime-heading" className="mt-8">

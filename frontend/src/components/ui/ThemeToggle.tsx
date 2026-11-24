@@ -40,9 +40,9 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
       aria-label={`Switch to ${nextTheme} theme`}
       aria-pressed={isDark}
       title={`Switch to ${nextTheme} mode`}
-      className={`group relative inline-flex h-9 w-[68px] cursor-pointer items-center rounded-full border border-line bg-canvas p-1 transition-colors duration-200 hover:border-forest/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${className}`}
+      className={`group relative inline-flex h-9 w-[68px] cursor-pointer items-center rounded-full border border-line bg-canvas p-1 transition-all duration-200 hover:border-forest/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)] ${className}`}
     >
-      {/* Sliding Active Pill */}
+      {/* Sliding Active Pill with Sun & Moon Icons — no plain dots */}
       <span
         className={`absolute top-1 bottom-1 flex w-7 items-center justify-center rounded-full bg-paper shadow-sm transition-transform duration-200 ease-out ${
           isDark ? 'translate-x-[32px] text-cyan-400' : 'translate-x-0 text-amber-500'
@@ -50,22 +50,22 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
         aria-hidden="true"
       >
         {isDark ? (
-          <Moon className="h-3.5 w-3.5 fill-cyan-400/20" />
+          <Moon className="h-3.5 w-3.5 fill-cyan-400/20 stroke-[2.2]" />
         ) : (
-          <Sun className="h-3.5 w-3.5 fill-amber-500/20" />
+          <Sun className="h-3.5 w-3.5 fill-amber-500/20 stroke-[2.2]" />
         )}
       </span>
 
       {/* Static Track Icons for Crisp Context */}
       <div className="flex w-full items-center justify-between px-1.5 text-muted pointer-events-none">
         <Sun
-          className={`h-3.5 w-3.5 transition-opacity ${
+          className={`h-3.5 w-3.5 transition-opacity duration-200 ${
             !isDark ? 'opacity-0' : 'opacity-70 group-hover:opacity-100'
           }`}
           aria-hidden="true"
         />
         <Moon
-          className={`h-3.5 w-3.5 transition-opacity ${
+          className={`h-3.5 w-3.5 transition-opacity duration-200 ${
             isDark ? 'opacity-0' : 'opacity-70 group-hover:opacity-100'
           }`}
           aria-hidden="true"

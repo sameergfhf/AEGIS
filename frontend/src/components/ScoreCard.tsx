@@ -185,7 +185,7 @@ export default function ScoreCard({ scan }: Props) {
           {metrics.map((metric, index) => (
             <div
               key={metric.label}
-              className={`px-4 py-4 ${index % 2 === 1 ? 'border-l border-line' : ''} ${index > 1 ? 'border-t border-line' : ''}`}
+              className={`flex flex-col justify-between px-4 py-4 min-h-[96px] ${index % 2 === 1 ? 'border-l border-line' : ''} ${index > 1 ? 'border-t border-line' : ''}`}
             >
               <dt className="font-mono text-[9.5px] uppercase tracking-[0.12em] text-muted">{metric.label}</dt>
               <dd className="mt-2 flex items-baseline gap-1.5">

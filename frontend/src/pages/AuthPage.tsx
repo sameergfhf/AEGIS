@@ -133,13 +133,6 @@ export default function AuthPage() {
 
   return (
     <div className="relative min-h-screen bg-canvas text-ink page-auth">
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-forest focus:px-4 focus:py-2 focus:text-xs focus:font-mono focus:text-white focus:shadow-xl focus:outline-none"
-      >
-        Skip to main content
-      </a>
-
       <div className="grid min-h-screen w-full lg:grid-cols-[1.1fr_1fr]">
         {/* Left Column: Brand Context & Ledger Details (Desktop) */}
         <aside className="relative hidden overflow-hidden border-r border-line bg-elevated/40 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">

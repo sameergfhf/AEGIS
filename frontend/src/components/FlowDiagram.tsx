@@ -290,19 +290,19 @@ const nodeTypes: Record<string, React.ComponentType<NodeProps>> = {
 
 /* --------------------------- Dagre Layout --------------------------------- */
 
-const NODE_WIDTH = 210;
-const NODE_HEIGHT_STAGE = 100;
-const NODE_HEIGHT_SECURITY = 130;
+const NODE_WIDTH = 250;
+const NODE_HEIGHT_STAGE = 120;
+const NODE_HEIGHT_SECURITY = 160;
 
 function getLayoutedElements(nodes: Node[], edges: Edge[]): { nodes: Node[]; edges: Edge[] } {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
   g.setGraph({
     rankdir: 'LR',
-    nodesep: 40,
-    ranksep: 80,
-    edgesep: 20,
-    marginx: 30,
-    marginy: 30,
+    nodesep: 90,
+    ranksep: 170,
+    edgesep: 50,
+    marginx: 50,
+    marginy: 50,
   });
 
   nodes.forEach((node) => {
@@ -553,10 +553,10 @@ function FlowDiagramInner({ flow }: Props) {
       animated: e.animated,
       type: 'smoothstep',
       style: { ...DEFAULT_EDGE_STYLE, ...(e.style || {}) },
-      labelStyle: { fill: 'var(--color-muted)', fontSize: 12, fontFamily: 'IBM Plex Mono, monospace' },
-      labelBgStyle: { fill: 'var(--color-paper)', fillOpacity: 1 },
-      labelBgPadding: [6, 4] as [number, number],
-      labelBgBorderRadius: 4,
+      labelStyle: { fill: 'var(--color-muted)', fontSize: 11, fontWeight: 600, fontFamily: 'IBM Plex Mono, monospace' },
+      labelBgStyle: { fill: 'var(--color-paper)', fillOpacity: 0.95 },
+      labelBgPadding: [8, 5] as [number, number],
+      labelBgBorderRadius: 6,
     }));
 
     const { nodes: ln, edges: le } = getLayoutedElements(rfNodes, rfEdges);

@@ -380,14 +380,14 @@ export default function TeamManagement() {
           </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-px bg-line sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 border-t border-line bg-canvas/30">
           {stats.map((stat) => (
-            <div key={stat.label} className="bg-canvas px-4 py-3">
-              <dt className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted">
+            <div key={stat.label} className="team-stat-card rounded-xl border border-line bg-paper p-3.5 shadow-xs transition-all hover:border-line-strong">
+              <dt className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted">
                 {stat.label}
               </dt>
               <dd
-                className={`mt-1 truncate font-mono text-[13px] font-semibold ${stat.tone} ${
+                className={`mt-1.5 truncate font-sans text-[15px] font-bold ${stat.tone} ${
                   stat.capitalize ? 'capitalize' : ''
                 }`}
                 title={stat.value}

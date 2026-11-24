@@ -133,16 +133,115 @@ export default function SimilarApisPanel({ scanId, scanStatus, targetUrl, target
           const status = scanLabel(result, alternative);
           const verified = alternative.endpoint_status !== 'endpoint_unverified';
           const selected = selectedIds.has(alternative.id);
-          return <article className={`recommend-option ${selected ? 'is-selected' : ''}`} key={alternative.id}>
-            <button className="recommend-select" type="button" aria-label={`${selected ? 'Remove' : 'Select'} ${alternative.provider_name}`} aria-pressed={selected} disabled={!verified || isScanning} onClick={() => setSelectedIds((current) => { const next = new Set(current); if (next.has(alternative.id)) next.delete(alternative.id); else next.add(alternative.id); return next; })}>{selected && <Check size={14} />}</button>
-            <div className="recommend-option-main"><div className="recommend-option-name"><h3>{alternative.provider_name}</h3><span>{alternative.api_name}</span>{topRelevanceMatch?.id === alternative.id && <Badge variant="success" size="xs">Best relevance match</Badge>}{alternative.relevance_score > 0 && <Badge variant="info" size="xs">{Math.round(alternative.relevance_score * 100)}% relevance</Badge>}<Badge variant={alternative.discovery_source === 'local_catalogue' ? 'neutral' : 'info'} size="xs">{alternative.discovery_source === 'live_directory' ? 'Live directory' : 'Local catalogue'}</Badge><Badge variant={alternative.verification_status === 'verified' ? 'success' : 'warning'} size="xs">{alternative.verification_status === 'verified' ? 'Verified metadata' : 'Unverified metadata'}</Badge></div><p>{alternative.description || alternative.main_functionality}</p><div className="recommend-option-meta"><span className={`recommend-status ${status === 'Assessed' ? 'status-good' : status === 'Not assessed' ? 'status-muted' : 'status-pending'}`}>{status === 'Assessed' ? `${result?.assessment_score?.toFixed(0)}/100 · security score` : status}</span>{result && result.assessment_score == null && result.status === 'completed' && <span>{result.assessment_coverage.toFixed(0)}% security scan coverage</span>}{!verified && <span>Endpoint is unverified; it cannot be scanned yet.</span>}</div>
-              <details className="recommend-option-details"><summary>Details</summary><div className="recommend-detail-body"><p>{alternative.main_functionality || alternative.description}</p>{alternative.relevance_confidence != null && <div><strong>Relevance confidence</strong><span>{Math.round(alternative.relevance_confidence * 100)}% · category metadata match confidence; separate from relevance and security scores.</span></div>}<div><strong>Authentication</strong><span>{alternative.authentication_methods?.length ? alternative.authentication_methods.join(', ') : 'Unknown'}</span></div><div><strong>Pricing</strong><span>{alternative.pricing_details || alternative.pricing_model || 'Not available'}</span></div><div className="recommend-detail-links">{alternative.documentation_url && <a href={alternative.documentation_url} target="_blank" rel="noreferrer noopener">Documentation <ExternalLink size={12} /></a>}{alternative.website_url && <a href={alternative.website_url} target="_blank" rel="noreferrer noopener">Website <ExternalLink size={12} /></a>}{alternative.openapi_spec_url && <a href={alternative.openapi_spec_url} target="_blank" rel="noreferrer noopener">OpenAPI spec <ExternalLink size={12} /></a>}{alternative.pricing_url && <a href={alternative.pricing_url} target="_blank" rel="noreferrer noopener">Pricing <ExternalLink size={12} /></a>}</div></div></details>
-            </div>
-            <div className="recommend-card-actions">
-              {verified && <Button variant="primary" size="xs" disabled={isScanning} leftIcon={<ShieldCheck size={13} />} onClick={() => { setSelectedIds(new Set([alternative.id])); setShowConsent(true); }}>{result ? 'Re-scan API' : 'Scan API'}</Button>}
-              {result?.findings.length ? <button type="button" className="recommend-findings-link" onClick={() => setInspecting(result)}>View findings ({result.findings.length})</button> : null}
-            </div>
-          </article>;
+          return (
+            <article className={`recommend-option ${selected ? 'is-selected' : ''}`} key={alternative.id}>
+              <div className="recommend-option-header">
+                <div className="recommend-header-left">
+                  <button
+                    className="recommend-select"
+                    type="button"
+                    aria-label={`${selected ? 'Remove' : 'Select'} ${alternative.provider_name}`}
+                    aria-pressed={selected}
+                    disabled={!verified || isScanning}
+                    onClick={() => setSelectedIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(alternative.id)) next.delete(alternative.id);
+                      else next.add(alternative.id);
+                      return next;
+                    })}
+                  >
+                    {selected && <Check size={14} />}
+                  </button>
+                  <div className="recommend-title-group">
+                    <div className="recommend-provider-line">
+                      <h3 className="recommend-provider-name">{alternative.provider_name}</h3>
+                      <span className="recommend-api-name">{alternative.api_name}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="recommend-badges-row">
+                  {topRelevanceMatch?.id === alternative.id && (
+                    <Badge variant="success" size="xs">Best match</Badge>
+                  )}
+                  {alternative.relevance_score > 0 && (
+                    <Badge variant="info" size="xs">{Math.round(alternative.relevance_score * 100)}% relevance</Badge>
+                  )}
+                  <Badge variant={alternative.discovery_source === 'live_directory' ? 'cyan' : 'neutral'} size="xs">
+                    {alternative.discovery_source === 'live_directory' ? 'Live directory' : 'Local catalogue'}
+                  </Badge>
+                  <Badge variant={alternative.verification_status === 'verified' ? 'success' : 'warning'} size="xs">
+                    {alternative.verification_status === 'verified' ? 'Verified' : 'Unverified'}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="recommend-option-body">
+                <p className="recommend-desc">{alternative.description || alternative.main_functionality}</p>
+
+                <div className="recommend-meta-pills">
+                  <span className={`recommend-status-pill ${status === 'Assessed' ? 'status-good' : status === 'Not assessed' ? 'status-muted' : 'status-pending'}`}>
+                    <ShieldCheck size={13} />
+                    {status === 'Assessed' ? `${result?.assessment_score?.toFixed(0)}/100 · Security score` : status}
+                  </span>
+                  {result && result.assessment_score == null && result.status === 'completed' && (
+                    <span className="recommend-meta-item">{result.assessment_coverage.toFixed(0)}% scan coverage</span>
+                  )}
+                  {alternative.authentication_methods?.length ? (
+                    <span className="recommend-meta-item">
+                      Auth: {alternative.authentication_methods.join(', ')}
+                    </span>
+                  ) : null}
+                  {(alternative.pricing_details || alternative.pricing_model) && (
+                    <span className="recommend-meta-item">
+                      Pricing: {alternative.pricing_details || alternative.pricing_model}
+                    </span>
+                  )}
+                  {!verified && <span className="recommend-meta-warning">Unverified endpoint</span>}
+                </div>
+
+                <details className="recommend-option-details">
+                  <summary>Full metadata &amp; links</summary>
+                  <div className="recommend-detail-body">
+                    <p>{alternative.main_functionality || alternative.description}</p>
+                    {alternative.relevance_confidence != null && (
+                      <div>
+                        <strong>Match confidence</strong>
+                        <span>{Math.round(alternative.relevance_confidence * 100)}% · category metadata match confidence</span>
+                      </div>
+                    )}
+                    <div className="recommend-detail-links">
+                      {alternative.documentation_url && <a href={alternative.documentation_url} target="_blank" rel="noreferrer noopener">Documentation <ExternalLink size={12} /></a>}
+                      {alternative.website_url && <a href={alternative.website_url} target="_blank" rel="noreferrer noopener">Website <ExternalLink size={12} /></a>}
+                      {alternative.openapi_spec_url && <a href={alternative.openapi_spec_url} target="_blank" rel="noreferrer noopener">OpenAPI spec <ExternalLink size={12} /></a>}
+                      {alternative.pricing_url && <a href={alternative.pricing_url} target="_blank" rel="noreferrer noopener">Pricing <ExternalLink size={12} /></a>}
+                    </div>
+                  </div>
+                </details>
+              </div>
+
+              <div className="recommend-option-footer">
+                <div className="recommend-footer-actions">
+                  {verified && (
+                    <Button
+                      variant="primary"
+                      size="xs"
+                      disabled={isScanning}
+                      leftIcon={<ShieldCheck size={13} />}
+                      onClick={() => { setSelectedIds(new Set([alternative.id])); setShowConsent(true); }}
+                    >
+                      {result ? 'Re-scan API' : 'Scan API'}
+                    </Button>
+                  )}
+                  {result?.findings.length ? (
+                    <button type="button" className="recommend-findings-link" onClick={() => setInspecting(result)}>
+                      View findings ({result.findings.length})
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          );
         })}</div>}
         <p className="recommend-target-note">Compared against <code>{targetUrl}</code></p>
       </section>

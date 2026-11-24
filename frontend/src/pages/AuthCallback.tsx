@@ -49,9 +49,6 @@ export default function AuthCallback() {
 
   return (
     <div className="relative flex min-h-screen flex-col bg-canvas">
-      <a href="#main-content" className="skip-link sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50">
-        Skip to main content
-      </a>
       <div className="aegis-statusbar">
         <div className="aegis-container aegis-statusbar-inner">
           <span className="flex items-center gap-2">

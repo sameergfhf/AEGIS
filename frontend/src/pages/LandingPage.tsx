@@ -10,10 +10,7 @@ import {
   X,
   Terminal,
   Activity,
-  CheckCircle2,
   AlertTriangle,
-  FileText,
-  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -103,41 +100,6 @@ const REPORT_ITEMS = [
   { label: 'PDF audit export', detail: 'A portable record for review and sign-off.' },
 ];
 
-const ASSESSMENT_VECTORS = [
-  {
-    name: 'HTTPS & TLS Security',
-    score: 25,
-    max: 25,
-    status: 'PASS',
-    statusTone: 'good',
-    detail: 'Certificate chain valid · Modern TLS 1.3 · Forward secrecy verified',
-  },
-  {
-    name: 'HTTP Security Headers',
-    score: 25,
-    max: 35,
-    status: 'REVIEW',
-    statusTone: 'warn',
-    detail: 'HSTS enabled · X-Content-Type-Options active · Missing Content-Security-Policy',
-  },
-  {
-    name: 'Information Leakage',
-    score: 20,
-    max: 20,
-    status: 'PASS',
-    statusTone: 'good',
-    detail: 'Server tokens suppressed · Zero debug traces or credentials exposed',
-  },
-  {
-    name: 'Domain & Redirect Reputation',
-    score: 20,
-    max: 20,
-    status: 'PASS',
-    statusTone: 'good',
-    detail: 'Clean threat feeds · Safe Browsing clear · Predictable redirect chain',
-  },
-];
-
 export default function LandingPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
@@ -201,14 +163,13 @@ export default function LandingPage() {
 
   const navLinks = [
     { href: '#scan', label: 'Run a scan' },
-    { href: '#method', label: 'Method' },
     { href: '#report', label: 'Report' },
+    { href: '#method', label: 'Method' },
     { href: '#questions', label: 'Questions' },
   ];
 
   return (
     <div className="page-landing refresh-site">
-      <a href="#main-content" className="skip-link sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50">Skip to main content</a>
       <header className="site-nav">
         <div className="site-nav-inner">
           <BrandLogo to="/" size="sm" subtitle="API security, made clear" />
@@ -268,16 +229,16 @@ export default function LandingPage() {
               <span className="home-eyebrow-dot" /> API SECURITY CHECKS, MADE SIMPLE
             </div>
 
-            <h1 className="mt-6 font-sans text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-ink leading-[1.08]">
+            <h1 className="mt-5 font-sans text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-ink leading-[1.08]">
               Know what your API is exposing.
             </h1>
 
-            <p className="mt-5 text-muted text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
+            <p className="mt-4 text-muted text-base sm:text-lg max-w-2xl mx-auto leading-relaxed">
               Run a quick, read-only security review. Get a clear score, the evidence behind it, and practical next steps.
             </p>
 
             {/* Clean Centered Search Bar */}
-            <form onSubmit={handleScanSubmit} className="home-scan-form home-scan-form-centered max-w-2xl mx-auto mt-8">
+            <form onSubmit={handleScanSubmit} className="home-scan-form home-scan-form-centered max-w-2xl mx-auto mt-7">
               <label htmlFor={scanInputId} className="sr-only">Public API endpoint</label>
               <div className="home-scan-control">
                 <Globe size={18} className="text-muted" />
@@ -314,229 +275,92 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="home-assurance justify-center mt-6">
+            <div className="home-assurance justify-center mt-5">
               <Shield size={16} />
               <span>Read-only checks. No exploit payloads or data changes.</span>
             </div>
           </div>
         </section>
 
-        {/* Floating Mascot & Interactive Security Questions (Customer Support SaaS Style) */}
-        <AegisSentinelMascot onSelectPrompt={handleSelectPrompt} />
-
-        {/* Feature Showcase Banner: Floating Live Preview Card over Balanced Atmospheric Backdrop */}
-        <section className="nooks-showcase-section py-14 px-4 sm:px-6 lg:px-8" aria-label="Feature Showcase Preview">
-          <div className="nooks-showcase-stage max-w-5xl mx-auto rounded-[32px] relative overflow-hidden p-6 sm:p-12 lg:p-16">
-            {/* Scenic atmospheric backdrop visual */}
-            <div className="scenic-backdrop-layer absolute inset-0 pointer-events-none" aria-hidden="true" />
-
-            {/* Floating Top Left Metric Chip */}
-            <div className="floating-metric-chip floating-chip-tl hidden md:flex items-center gap-2">
-              <Shield className="h-4 w-4 text-emerald-500" />
-              <span>SSRF Guard: Private IP ranges blocked</span>
-            </div>
-
-            {/* Floating Top Right Metric Chip */}
-            <div className="floating-metric-chip floating-chip-tr hidden md:flex items-center gap-2">
-              <Clock className="h-4 w-4 text-cyan-500" />
-              <span>Telemetry: 142ms probe latency</span>
-            </div>
-
-            {/* Main Floating Center Preview Card */}
-            <div className="nooks-floating-preview-card relative z-10 max-w-lg mx-auto rounded-3xl p-6 sm:p-8 shadow-2xl">
-              <div className="flex items-center justify-between border-b border-line pb-4">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="font-mono text-[11px] font-bold tracking-wider text-emerald-600 dark:text-emerald-400 uppercase">
-                    LIVE PROBE ACTIVE
-                  </span>
-                </div>
-                <Badge variant="success" size="xs">Verified Host</Badge>
-              </div>
-
-              <div className="flex items-center gap-3.5 my-5">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-forest/10 text-forest">
-                  <Globe size={20} />
-                </div>
-                <div className="min-w-0">
-                  <strong className="block truncate font-mono text-[16px] font-semibold text-ink">api.acme.dev</strong>
-                  <small className="block text-[12px] text-muted">Production API · last checked just now</small>
-                </div>
-                <span className="ml-auto flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <Check size={14} />
-                </span>
-              </div>
-
-              <div className="flex items-baseline justify-between rounded-2xl border border-line bg-elevated/70 p-4 sm:p-5">
-                <div>
-                  <span className="block text-[13.5px] font-semibold text-ink">Security score</span>
-                  <small className="text-[12px] text-muted">Across 4 evaluation pillars</small>
-                </div>
-                <div className="text-right">
-                  <strong className="font-sans text-3xl sm:text-4xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
-                    92<span className="text-lg font-normal text-muted">/100</span>
-                  </strong>
-                  <span className="block font-mono text-[10.5px] font-semibold uppercase tracking-wider text-muted">Grade A+</span>
-                </div>
-              </div>
-
-              <div className="home-score-track mt-3">
-                <span />
-              </div>
-
-              <div className="mt-4 divide-y divide-line text-[13px]">
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="flex items-center gap-2 text-ink">
-                    <CheckCircle2 size={15} className="text-emerald-500" />
-                    Transport security (TLS 1.3)
-                  </span>
-                  <strong className="text-emerald-600 dark:text-emerald-400 font-semibold text-xs">Strong</strong>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="flex items-center gap-2 text-ink">
-                    <AlertTriangle size={15} className="text-amber-500" />
-                    Response headers (HSTS, CSP)
-                  </span>
-                  <strong className="text-amber-600 dark:text-amber-400 font-semibold text-xs">Review needed</strong>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="flex items-center gap-2 text-ink">
-                    <CheckCircle2 size={15} className="text-emerald-500" />
-                    Data exposure (Server banners)
-                  </span>
-                  <strong className="text-emerald-600 dark:text-emerald-400 font-semibold text-xs">Strong</strong>
-                </div>
-                <div className="flex items-center justify-between py-2.5">
-                  <span className="flex items-center gap-2 text-ink">
-                    <CheckCircle2 size={15} className="text-emerald-500" />
-                    Threat reputation (Safe Browsing)
-                  </span>
-                  <strong className="text-emerald-600 dark:text-emerald-400 font-semibold text-xs">Clear</strong>
-                </div>
-              </div>
-
-              <div className="home-preview-note mt-4">
-                <span>ONE ITEM TO REVIEW</span>
-                <p>Content security policy is missing from the response.</p>
-              </div>
-            </div>
-
-            {/* Floating Bottom Left Metric Chip */}
-            <div className="floating-metric-chip floating-chip-bl hidden md:flex items-center gap-2">
-              <Lock className="h-4 w-4 text-emerald-500" />
-              <span>TLS 1.3 &amp; Forward Secrecy Validated</span>
-            </div>
-
-            {/* Floating Bottom Right Metric Chip */}
-            <div className="floating-metric-chip floating-chip-br hidden md:flex items-center gap-2">
-              <FileText className="h-4 w-4 text-purple-500" />
-              <span>Audit-Ready PDF Export Available</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Strong-Coverage / Assessment Showcase Section: Report Summary + 4-Vector Side Panel */}
-        <section id="report" className="home-report-section py-16 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center max-w-2xl mx-auto mb-12">
+        {/* Hero Left-Right Split: Robot Mascot Panel Beside Report / Assessment Summary Section */}
+        <section id="report" className="home-report-section py-14 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center max-w-2xl mx-auto mb-10">
               <span className="home-section-kicker">A REPORT YOU CAN USE</span>
               <h2 className="mt-2 font-sans text-3xl sm:text-4xl font-bold tracking-tight text-ink">
                 Not just a score. A way forward.
               </h2>
               <p className="mt-3 text-muted text-base leading-relaxed">
-                See what passed, what needs attention, and what to do next. Open any result to review the evidence.
+                See what passed, what needs attention, and what to do next. Select any sentinel question to inspect live evidence.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-              {/* Structured Report Summary Box (7 Cols) */}
-              <div className="lg:col-span-7 home-report-card rounded-3xl p-6 sm:p-8">
-                <div className="home-report-card-head">
-                  <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-muted">
-                    SECURITY ASSESSMENT SUMMARY
-                  </span>
-                  <Badge variant="success" size="xs">Completed</Badge>
-                </div>
-
-                <div className="home-report-score-line my-6 flex items-baseline justify-between">
-                  <div>
-                    <small className="block text-xs uppercase tracking-wider text-muted font-mono font-medium">Overall score</small>
-                    <strong className="text-4xl sm:text-5xl font-sans font-bold text-emerald-600 dark:text-emerald-400">
-                      92<span className="text-xl text-muted font-normal">/100</span>
-                    </strong>
-                  </div>
-                  <span className="home-report-grade">Good (A+)</span>
-                </div>
-
-                <div className="home-report-divider my-4" />
-
-                <div className="home-report-line flex items-center justify-between text-sm font-medium">
-                  <span className="text-ink">Content security policy</span>
-                  <Badge variant="warning" size="xs">Review</Badge>
-                </div>
-                <p className="home-report-evidence text-sm text-muted mt-2 mb-6">
-                  Evidence: No Content-Security-Policy header was returned.
-                </p>
-
-                <ul className="home-report-list grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-6">
-                  {REPORT_ITEMS.map((item, index) => (
-                    <li key={item.label} className="flex gap-3.5 items-start p-3.5 rounded-xl border border-line bg-canvas transition-colors hover:bg-elevated hover:border-line-strong">
-                      <span className="font-mono text-xs font-bold text-forest shrink-0 mt-0.5">
-                        {String(index + 1).padStart(2, '0')}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <strong className="block text-[13px] font-semibold text-ink leading-tight">{item.label}</strong>
-                        <small className="block mt-1 text-[11.5px] text-muted leading-relaxed">{item.detail}</small>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-
-                <a href="#scan" className="inline-flex items-center gap-2 text-sm font-semibold text-forest hover:underline">
-                  Run your own check <ArrowRight size={15} />
-                </a>
+            {/* Balanced Left-Right Split (No wide empty gap) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
+              {/* Left Column (5 Cols): Robot Mascot Panel with Interactive Question Cards */}
+              <div className="lg:col-span-5 flex flex-col justify-between">
+                <AegisSentinelMascot onSelectPrompt={handleSelectPrompt} hideHeader />
               </div>
 
-              {/* Side Panel Displaying All 4 Security Assessment Vectors (5 Cols) */}
-              <div className="lg:col-span-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between pb-2 border-b border-line">
-                  <span className="font-mono text-xs font-bold uppercase tracking-wider text-muted">
-                    EVALUATION VECTORS (4/4)
-                  </span>
-                  <span className="font-mono text-xs text-muted">100 max pts</span>
-                </div>
-
-                {ASSESSMENT_VECTORS.map((vec, idx) => (
-                  <div
-                    key={vec.name}
-                    className="assessment-vector-panel rounded-xl border border-line bg-paper p-4 transition-all hover:border-forest/40 hover:shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-[11px] font-bold text-muted">0{idx + 1}</span>
-                        <h3 className="font-sans text-[13.5px] font-semibold text-ink">{vec.name}</h3>
-                      </div>
-                      <span
-                        className={`font-mono text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                          vec.statusTone === 'good'
-                            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
-                            : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-                        }`}
-                      >
-                        {vec.status}
+              {/* Right Column (7 Cols): Structured Report Assessment Summary */}
+              <div className="lg:col-span-7 home-report-card flex flex-col justify-between rounded-3xl p-6 sm:p-8">
+                <div>
+                  <div className="home-report-card-head flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="font-mono text-[11px] font-bold tracking-wider uppercase text-muted">
+                        SECURITY ASSESSMENT SUMMARY
                       </span>
                     </div>
+                    <Badge variant="success" size="xs">Completed Probe</Badge>
+                  </div>
 
-                    <p className="text-[11.5px] text-muted mt-2 leading-relaxed">{vec.detail}</p>
-
-                    <div className="mt-3 flex items-center justify-between pt-2 border-t border-line font-mono text-[11px]">
-                      <span className="text-muted">Weight Contribution</span>
-                      <strong className="text-ink font-semibold">
-                        {vec.score} / {vec.max} pts
+                  <div className="home-report-score-line my-5 flex items-baseline justify-between">
+                    <div>
+                      <small className="block text-xs uppercase tracking-wider text-muted font-mono font-medium">Overall score</small>
+                      <strong className="text-4xl sm:text-5xl font-sans font-bold text-emerald-600 dark:text-emerald-400">
+                        92<span className="text-xl text-muted font-normal">/100</span>
                       </strong>
                     </div>
+                    <span className="home-report-grade font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                      Good (Grade A+)
+                    </span>
                   </div>
-                ))}
+
+                  <div className="home-report-divider my-4 border-t border-line" />
+
+                  <div className="home-report-line flex items-center justify-between text-sm font-medium">
+                    <span className="text-ink font-semibold flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      Content security policy
+                    </span>
+                    <Badge variant="warning" size="xs">Review needed</Badge>
+                  </div>
+                  <p className="home-report-evidence text-sm text-muted mt-1.5 mb-5">
+                    Evidence: No Content-Security-Policy header was returned in API response.
+                  </p>
+
+                  <ul className="home-report-list grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                    {REPORT_ITEMS.map((item, index) => (
+                      <li key={item.label} className="flex gap-3 items-start p-3 rounded-xl border border-line bg-canvas transition-colors hover:bg-elevated hover:border-line-strong">
+                        <span className="font-mono text-xs font-bold text-forest shrink-0 mt-0.5">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <strong className="block text-[13px] font-semibold text-ink leading-tight">{item.label}</strong>
+                          <small className="block mt-0.5 text-[11.5px] text-muted leading-relaxed">{item.detail}</small>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="pt-3 border-t border-line flex items-center justify-between">
+                  <a href="#scan" className="inline-flex items-center gap-2 text-sm font-semibold text-forest hover:underline">
+                    Run your own check <ArrowRight size={15} />
+                  </a>
+                  <span className="font-mono text-xs text-muted">4 pillars verified</span>
+                </div>
               </div>
             </div>
           </div>

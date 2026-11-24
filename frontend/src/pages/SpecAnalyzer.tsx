@@ -320,13 +320,13 @@ export default function SpecAnalyzer() {
             </h2>
           </div>
 
-          <div role="group" aria-label="Specification source" className="flex border border-line-strong">
+          <div role="group" aria-label="Specification source" className="spec-tab-switcher flex items-center p-1 rounded-xl border border-line bg-elevated">
             <button
               type="button"
               aria-pressed={activeTab === 'url'}
               onClick={() => setActiveTab('url')}
-              className={`flex min-h-9 items-center px-2.5 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
-                activeTab === 'url' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
+              className={`flex min-h-8 items-center px-3.5 rounded-lg font-mono text-[11px] font-semibold tracking-wider transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${
+                activeTab === 'url' ? 'bg-paper text-ink shadow-xs border border-line' : 'text-muted hover:text-ink'
               }`}
             >
               Remote URL
@@ -335,8 +335,8 @@ export default function SpecAnalyzer() {
               type="button"
               aria-pressed={activeTab === 'file'}
               onClick={() => setActiveTab('file')}
-              className={`flex min-h-9 items-center border-l border-line-strong px-2.5 font-mono text-[9.5px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--aegis-focus)] ${
-                activeTab === 'file' ? 'bg-ink text-canvas' : 'bg-paper text-muted hover:text-ink'
+              className={`flex min-h-8 items-center px-3.5 rounded-lg font-mono text-[11px] font-semibold tracking-wider transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${
+                activeTab === 'file' ? 'bg-paper text-ink shadow-xs border border-line' : 'text-muted hover:text-ink'
               }`}
             >
               Upload file
@@ -387,7 +387,7 @@ export default function SpecAnalyzer() {
                     key={sample.url}
                     type="button"
                     onClick={() => setUrl(sample.url)}
-                    className="flex min-h-9 items-center border border-line bg-canvas px-2 font-mono text-[10px] text-muted transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--aegis-focus)]"
+                    className="flex min-h-8 items-center rounded-full border border-line bg-canvas px-3.5 font-mono text-[11px] font-medium text-muted transition-all hover:border-forest/50 hover:text-ink hover:bg-elevated focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest"
                   >
                     {sample.label}
                   </button>

@@ -64,11 +64,15 @@ const SECURITY_PROMPTS: MascotPrompt[] = [
 interface AegisSentinelMascotProps {
   onSelectPrompt: (prompt: MascotPrompt) => void;
   selectedPromptId?: string | null;
+  className?: string;
+  hideHeader?: boolean;
 }
 
 export default function AegisSentinelMascot({
   onSelectPrompt,
   selectedPromptId,
+  className = '',
+  hideHeader = false,
 }: AegisSentinelMascotProps) {
   const [activePromptId, setActivePromptId] = useState<string>(SECURITY_PROMPTS[0].id);
   const [pupilOffset, setPupilOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -98,13 +102,13 @@ export default function AegisSentinelMascot({
       const dy = e.clientY - visorCenterY;
       const dist = Math.hypot(dx, dy);
 
-      // Clamp limits to prevent clipping or detaching
-      const maxPupilX = 6.5;
-      const maxPupilY = 4.0;
-      const maxVisorX = 3.0;
-      const maxVisorY = 2.0;
+      // Clamp limits to prevent clipping or detaching cleanly inside bounds
+      const maxPupilX = 5.5;
+      const maxPupilY = 3.2;
+      const maxVisorX = 2.4;
+      const maxVisorY = 1.5;
 
-      const factor = Math.min(1, dist / 320);
+      const factor = Math.min(1, dist / 300);
       const nx = dx / (dist || 1);
       const ny = dy / (dist || 1);
 
@@ -147,31 +151,66 @@ export default function AegisSentinelMascot({
   };
 
   return (
-    <div className="aegis-mascot-showcase relative mx-auto my-14 max-w-4xl px-4 sm:px-6">
-      <div className="text-center mb-8">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-forest/20 bg-forest/5 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-forest">
-          <Sparkles className="h-3.5 w-3.5" />
-          Interactive Sentinel Guide
-        </span>
-        <h2 className="mt-3 font-sans text-2xl sm:text-3xl font-bold tracking-tight text-ink">
-          Ask your API the critical questions
-        </h2>
-        <p className="mt-2 text-sm text-muted max-w-xl mx-auto leading-relaxed">
-          Select any security question below. AEGIS Sentinel will pre-load an example check and explain what evidence is inspected.
-        </p>
-      </div>
+    <div className={`aegis-mascot-showcase relative w-full ${className}`}>
+      {!hideHeader ? (
+        <div className="text-center mb-6">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-forest/20 bg-forest/5 px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-forest">
+            <Sparkles className="h-3.5 w-3.5" />
+            Interactive Sentinel Guide
+          </span>
+          <h2 className="mt-3 font-sans text-2xl sm:text-3xl font-bold tracking-tight text-ink">
+            Ask your API the critical questions
+          </h2>
+          <p className="mt-2 text-sm text-muted max-w-xl mx-auto leading-relaxed">
+            Select any security question below. AEGIS Sentinel will pre-load an example check and explain what evidence is inspected.
+          </p>
+        </div>
+      ) : null}
 
       {/* Main Mascot Stage */}
-      <div className="mascot-stage-container relative mx-auto flex min-h-[420px] max-w-3xl items-center justify-center rounded-3xl border border-line bg-paper/70 p-6 sm:p-12 backdrop-blur-md shadow-xl">
+      <div className="mascot-stage-container relative mx-auto flex min-h-[460px] w-full flex-col items-center justify-between rounded-3xl border border-line bg-paper/75 p-6 sm:p-8 backdrop-blur-md shadow-lg overflow-hidden">
         {/* Ambient Glow */}
-        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_50%_45%,rgba(16,185,129,0.14),transparent_70%)]" aria-hidden="true" />
+        <div className="pointer-events-none absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_50%_45%,rgba(16,185,129,0.12),transparent_70%)]" aria-hidden="true" />
 
-        {/* Larger Robot Mascot with Dual Parallax Tracking */}
-        <div className="mascot-character-wrapper relative z-10 flex flex-col items-center">
+        {/* Top Prompts Row (Desktop/Tablet) */}
+        <div className="z-10 w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+          {SECURITY_PROMPTS.slice(0, 2).map((prompt) => {
+            const isSelected = (selectedPromptId || activePromptId) === prompt.id;
+            const Icon = prompt.icon;
+            return (
+              <button
+                key={prompt.id}
+                type="button"
+                onClick={() => handlePromptClick(prompt)}
+                className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${
+                  isSelected
+                    ? 'border-forest bg-paper shadow-sm ring-2 ring-forest/30'
+                    : 'border-line bg-paper/90 hover:border-forest/50'
+                }`}
+                aria-label={`Ask: ${prompt.question}`}
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-forest/10 text-forest">
+                  <Icon className="h-4.5 w-4.5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="block font-sans text-xs font-bold text-ink leading-tight">
+                    {prompt.question}
+                  </span>
+                  <span className="block font-mono text-[10px] text-muted mt-0.5">
+                    {prompt.badge}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Larger Robot Mascot with Parallax Tracking */}
+        <div className="mascot-character-wrapper relative z-10 my-auto flex flex-col items-center py-2">
           <div className="mascot-avatar-pulse relative">
             <svg
               ref={svgRef}
-              className="h-56 w-56 sm:h-64 sm:w-64 md:h-72 md:w-72 transition-transform duration-300 hover:scale-105"
+              className="h-60 w-60 sm:h-64 sm:w-64 md:h-72 md:w-72 transition-transform duration-300 hover:scale-105"
               viewBox="0 0 200 200"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -261,9 +300,9 @@ export default function AegisSentinelMascot({
           </div>
         </div>
 
-        {/* Interactive Floating Question Prompts (Desktop Quadrant Positions) */}
-        <div className="mascot-prompts-layer absolute inset-0 hidden md:block pointer-events-none">
-          {SECURITY_PROMPTS.map((prompt) => {
+        {/* Bottom Prompts Row (Desktop/Tablet) */}
+        <div className="z-10 w-full grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+          {SECURITY_PROMPTS.slice(2, 4).map((prompt) => {
             const isSelected = (selectedPromptId || activePromptId) === prompt.id;
             const Icon = prompt.icon;
             return (
@@ -271,21 +310,21 @@ export default function AegisSentinelMascot({
                 key={prompt.id}
                 type="button"
                 onClick={() => handlePromptClick(prompt)}
-                className={`mascot-prompt-pill pointer-events-auto absolute flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-200 hover:scale-105 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${prompt.positionClass} ${
+                className={`flex items-center gap-3 rounded-2xl border p-3.5 text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest ${
                   isSelected
-                    ? 'border-forest bg-paper shadow-md ring-2 ring-forest/30'
-                    : 'border-line bg-paper/95 hover:border-forest/50'
+                    ? 'border-forest bg-paper shadow-sm ring-2 ring-forest/30'
+                    : 'border-line bg-paper/90 hover:border-forest/50'
                 }`}
                 aria-label={`Ask: ${prompt.question}`}
               >
-                <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-xl bg-forest/10 text-forest">
-                  <Icon className="h-4 w-4" />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-forest/10 text-forest">
+                  <Icon className="h-4.5 w-4.5" />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="block font-sans text-xs font-bold text-ink leading-tight">
                     {prompt.question}
                   </span>
-                  <span className="block font-mono text-[10px] text-muted">
+                  <span className="block font-mono text-[10px] text-muted mt-0.5">
                     {prompt.badge}
                   </span>
                 </div>
@@ -293,34 +332,6 @@ export default function AegisSentinelMascot({
             );
           })}
         </div>
-      </div>
-
-      {/* Mobile Prompts Grid (< md) */}
-      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:hidden">
-        {SECURITY_PROMPTS.map((prompt) => {
-          const isSelected = (selectedPromptId || activePromptId) === prompt.id;
-          const Icon = prompt.icon;
-          return (
-            <button
-              key={prompt.id}
-              type="button"
-              onClick={() => handlePromptClick(prompt)}
-              className={`flex items-center gap-3 rounded-xl border p-3.5 text-left transition-all ${
-                isSelected
-                  ? 'border-forest bg-paper shadow-sm ring-2 ring-forest/20'
-                  : 'border-line bg-paper/90'
-              }`}
-            >
-              <div className="flex h-8.5 w-8.5 shrink-0 items-center justify-center rounded-lg bg-forest/10 text-forest">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <span className="block text-xs font-bold text-ink">{prompt.question}</span>
-                <span className="block font-mono text-[10px] text-muted">{prompt.badge}</span>
-              </div>
-            </button>
-          );
-        })}
       </div>
     </div>
   );

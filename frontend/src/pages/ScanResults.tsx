@@ -33,7 +33,7 @@ import FindingsChart from '../components/FindingsChart';
 import RequestInspector from '../components/RequestInspector';
 import ApiCategoryPanel from '../components/ApiCategoryPanel';
 import SecurityHeadersMatrix from '../components/SecurityHeadersMatrix';
-import { Button, SeverityBadge, Badge, Spinner } from '../components/ui';
+import { Button, SeverityBadge, Badge, Spinner, Modal } from '../components/ui';
 
 const TEST_ORDER = ['tls', 'headers', 'leakage', 'reputation'] as const;
 
@@ -57,6 +57,7 @@ export default function ScanResults() {
   const [copiedEvidenceId, setCopiedEvidenceId] = useState<string | null>(null);
   const [aiExplanations, setAiExplanations] = useState<Record<string, string>>({});
   const [aiLoadingFinding, setAiLoadingFinding] = useState<string | null>(null);
+  const [isVectorsModalOpen, setIsVectorsModalOpen] = useState(false);
 
   useEffect(() => {
     if (scanId) {
@@ -385,28 +386,43 @@ export default function ScanResults() {
           <section id="report-category" className="report-content-section" aria-label="API profile">
             <div className="report-section-heading"><span>02</span><div><small>API PROFILE</small><h2>Understand this endpoint</h2></div></div>
             <ApiCategoryPanel scanId={scan.id} scanStatus={scan.status} />
-          </section>
 
-          <section className="report-recommendations-cta" aria-label="API recommendations">
-            <span className="report-recommendations-icon"><Sparkles size={20} /></span>
-            <div>
-              <p>LOOKING FOR AN ALTERNATIVE?</p>
-              <h2>Explore API recommendations</h2>
-              <span>Find similar services, compare security evidence, and review the strongest matches in a dedicated workspace.</span>
+            {/* Recommendations CTA neatly integrated below endpoint profile */}
+            <div className="report-recommendations-cta" aria-label="API recommendations">
+              <div className="report-recommendations-left">
+                <span className="report-recommendations-icon"><Sparkles size={20} /></span>
+                <div>
+                  <p>LOOKING FOR AN ALTERNATIVE?</p>
+                  <h2>Explore API recommendations</h2>
+                  <span>Find similar services, compare security evidence, and review the strongest matches in a dedicated workspace.</span>
+                </div>
+              </div>
+              <Link to={`/scan/${scan.id}/recommendations`} className="report-recommendations-link">
+                Explore recommendations <ArrowUpRight size={16} />
+              </Link>
             </div>
-            <Link to={`/scan/${scan.id}/recommendations`} className="report-recommendations-link">Explore recommendations <ArrowUpRight size={16} /></Link>
           </section>
 
           <section id="report-vectors" aria-labelledby="vectors-heading" className="space-y-3">
             <div className="flex flex-col justify-between gap-2 border-b border-line pb-2.5 sm:flex-row sm:items-end">
               <div>
                 <p className="aegis-eyebrow">Vectors / evaluation</p>
-                <h2
-                  id="vectors-heading"
-                  className="mt-1.5 font-display text-[17px] font-semibold tracking-tight text-ink"
+                <button
+                  type="button"
+                  onClick={() => setIsVectorsModalOpen(true)}
+                  className="group mt-1 flex items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-forest rounded-lg cursor-pointer"
+                  title="Click to view full security vector evaluations summary"
                 >
-                  Security vector evaluations
-                </h2>
+                  <h2
+                    id="vectors-heading"
+                    className="font-display text-[17px] font-semibold tracking-tight text-ink transition-colors group-hover:text-forest"
+                  >
+                    Security vector evaluations
+                  </h2>
+                  <span className="rounded-md border border-line bg-canvas px-2 py-0.5 font-mono text-[10px] text-muted transition-colors group-hover:border-forest group-hover:text-forest">
+                    View summary modal &rarr;
+                  </span>
+                </button>
               </div>
               <p className="font-mono text-[9.5px] uppercase tracking-[0.08em] text-muted">
                 Expand for checks &amp; evidence
@@ -642,10 +658,30 @@ export default function ScanResults() {
                                   </pre>
                                 </div>
                               ) : null}
-                              {session ? <div className="space-y-2">
-                                <Button variant="secondary" size="sm" disabled={aiLoadingFinding === f.id} leftIcon={<Sparkles className="h-3 w-3" />} onClick={() => void handleExplainFinding(f.id)}>{aiLoadingFinding === f.id ? 'Analyzing redacted evidence…' : 'Explain with AI'}</Button>
-                                {aiExplanations[f.id] ? <div className="border-l-2 border-l-forest bg-canvas px-3.5 py-2.5"><span className="font-mono text-[9px] uppercase tracking-[0.12em] text-forest">AI-generated explanation · suggestions only</span><p className="mt-1 mb-0 whitespace-pre-wrap text-[11.5px] leading-relaxed text-muted">{aiExplanations[f.id]}</p></div> : null}
-                              </div> : null}
+                              {session ? (
+                                <div className="mt-3 space-y-2">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={aiLoadingFinding === f.id}
+                                    leftIcon={<Sparkles className="h-3 w-3" />}
+                                    onClick={() => void handleExplainFinding(f.id)}
+                                  >
+                                    {aiLoadingFinding === f.id ? 'Analyzing redacted evidence…' : 'Explain with AI'}
+                                  </Button>
+                                  {aiExplanations[f.id] ? (
+                                    <div className="rounded-xl border border-line-strong bg-paper p-4 shadow-xs">
+                                      <span className="flex items-center gap-1.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.12em] text-forest">
+                                        <Sparkles className="h-3 w-3" />
+                                        AI-generated explanation &amp; guidance
+                                      </span>
+                                      <div className="mt-2 text-[12px] leading-relaxed text-ink font-sans whitespace-pre-line">
+                                        {aiExplanations[f.id].replace(/^###?\s+/gm, '').replace(/\*\*/g, '')}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -659,6 +695,102 @@ export default function ScanResults() {
           </div>
         </div>
       ) : null}
+
+      {/* Security Vector Evaluations Modal — Clean, properly sized pop-up box */}
+      <Modal
+        isOpen={isVectorsModalOpen}
+        onClose={() => setIsVectorsModalOpen(false)}
+        maxWidth="3xl"
+        title={
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-forest/10 text-forest border border-forest/20">
+              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-sans text-[17px] font-bold text-ink">Security Vector Evaluations</span>
+                <Badge variant="success" size="xs">4/4 Evaluated</Badge>
+              </div>
+              <p className="mt-0.5 font-mono text-[11.5px] text-muted">
+                Audit score: <strong className="text-ink font-semibold">{scan.assessment_score ?? 0}/100</strong> across 4 evaluation pillars
+              </p>
+            </div>
+          </div>
+        }
+        description="Comprehensive evaluation results across transport security, response policies, data disclosure, and threat reputation."
+      >
+        <div className="space-y-6">
+          {/* 4 Vector Cards Grid */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {TEST_ORDER.map((key, index) => {
+              const res = testResults[key];
+              const label = VECTOR_LABELS[key] || key;
+              const earned = res?.earned_points ?? 0;
+              const max = res?.max_points ?? 25;
+              const pct = Math.min(100, Math.round((earned / (max || 1)) * 100));
+              const status = res?.status ?? 'inconclusive';
+              const isPass = status === 'pass';
+              const isFail = status === 'fail';
+
+              return (
+                <div
+                  key={key}
+                  className="rounded-xl border border-line bg-canvas p-4 shadow-xs transition-colors hover:border-forest/40"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-muted">
+                      0{index + 1} · {label}
+                    </span>
+                    <span
+                      className={`rounded px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-wider ${
+                        isPass
+                          ? 'border border-safe/30 bg-safe/10 text-safe'
+                          : isFail
+                            ? 'border border-critical/30 bg-critical/10 text-critical'
+                            : 'border border-high/30 bg-high/10 text-high'
+                      }`}
+                    >
+                      {status}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 flex items-baseline justify-between font-mono">
+                    <span className="text-xs text-muted">Weight</span>
+                    <strong className="text-sm font-bold text-ink">{earned.toFixed(0)} / {max} pts ({pct}%)</strong>
+                  </div>
+
+                  <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line">
+                    <div
+                      className={`h-full rounded-full ${isPass ? 'bg-safe' : isFail ? 'bg-critical' : 'bg-high'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+
+                  <p className="mt-2.5 text-[11.5px] leading-relaxed text-muted">
+                    {res?.findings?.length ?? 0} security checks evaluated with verifiable telemetry.
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Assessment checks ledger overview */}
+          <div className="rounded-xl border border-line bg-elevated/40 p-4">
+            <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-forest mb-2">
+              Verification Standards
+            </h4>
+            <p className="text-xs text-muted leading-relaxed">
+              Every score traces to verifiable, observable HTTP, TLS, and DNS observations without exploit payloads or data modification.
+            </p>
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-line">
+            <Button variant="secondary" size="sm" onClick={() => setIsVectorsModalOpen(false)}>
+              Close evaluations
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
